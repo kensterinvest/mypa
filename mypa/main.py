@@ -78,11 +78,14 @@ async def ready() -> dict:
 
 # Routers
 from .routes import items as items_routes  # noqa: E402
+from .routes import oauth as oauth_routes  # noqa: E402
 from .routes import reminders as reminders_routes  # noqa: E402
 from .routes import search as search_routes  # noqa: E402
 
 app.include_router(items_routes.router)
 app.include_router(reminders_routes.router)
 app.include_router(search_routes.router)
+# OAuth router has paths at /.well-known/* and /oauth/* — mounted at root.
+app.include_router(oauth_routes.router)
 
 # MCP mount happens via mypa.mcp_server when run as the MCP service.

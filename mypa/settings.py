@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     outcome_nudge_enabled: bool = Field(default=False)
     calendar_conflict_notes: bool = Field(default=True)
 
+    # --- OAuth 2.1 (for Claude.ai mobile + other MCP clients that require OAuth) ---
+    oauth_jwt_secret: str = Field(default="")  # generated if missing on first boot
+    oauth_access_token_ttl_sec: int = Field(default=3600)         # 1 hour
+    oauth_refresh_token_ttl_sec: int = Field(default=2592000)     # 30 days
+    oauth_code_ttl_sec: int = Field(default=600)                  # 10 min
+
     # --- Logging ---
     audit_log_path: Path = Field(default=Path("/var/log/mypa-mcp.log"))
     blob_dir: Path = Field(default=Path("/var/lib/mypa/blobs"))

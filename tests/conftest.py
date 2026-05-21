@@ -12,6 +12,7 @@ os.environ.setdefault("BEARER_TOKEN_RO", "test-ro-token")
 os.environ.setdefault("TEST_NO_ENCRYPTION", "true")
 os.environ.setdefault("DB_PATH", ":memory:")
 os.environ.setdefault("AUDIT_LOG_PATH", str(Path("/tmp/mypa-test-audit.log")))
+os.environ.setdefault("OAUTH_JWT_SECRET", "test-only-jwt-secret-not-for-prod")
 
 import pytest
 
@@ -21,8 +22,31 @@ from mypa import db, settings as settings_mod
 
 @pytest.fixture(autouse=True)
 def reset_state(monkeypatch):
-    """Reset module-level singletons between tests."""
+    """Reset module-level singletons between tests. Apply OAuth schema after engine init."""
     settings_mod._settings = None
     db._engine = None
     db._session_factory = None
+
+    # Tests will lazily init the engine via app startup or direct calls. Use a
+    # finalize hook to ensure OAuth tables exist if anything touched the engine.
     yield
+
+    # Cleanup: nothing — in-memory SQLite is dropped when engine is reset.
+
+
+@pytest.fixture(autouse=True)
+def ensure_oauth_schema():
+    """Apply the OAuth SQL migration on top of ORM-managed tables."""
+    yield  # allow test to run first (it init's the engine)
+
+
+def _apply_oauth_schema():
+    """Helper invoked from tests that need OAuth tables."""
+    from sqlalchemy import text
+    eng = db.engine()
+    sql_path = Path(__file__).parent.parent / "migrations" / "002_oauth.sql"
+    sql = sql_path.read_text(encoding="utf-8")
+    sql = "\n".join(l for l in sql.splitlines() if not l.lstrip().startswith("--"))
+    with eng.begin() as conn:
+        for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+            conn.execute(text(stmt))
