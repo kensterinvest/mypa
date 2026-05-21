@@ -345,15 +345,61 @@ CASUAL_CAPTURE_HINTS = {
 }
 
 
+_CUSTOM_KINDS_CACHE: dict | None = None
+
+
+def _load_custom_kinds() -> dict:
+    """Read /etc/mypa/kinds.yaml at first call. Merge with DEFAULT_KINDS.
+
+    YAML format (per the master plan):
+        recipe:
+          description: A cooking recipe with ingredients and steps.
+          example_data:
+            cuisine: string
+            servings: number
+            prep_min: number
+        workout:
+          description: A workout session.
+          ...
+
+    Cached after first read — restart the service to pick up changes.
+    """
+    global _CUSTOM_KINDS_CACHE
+    if _CUSTOM_KINDS_CACHE is not None:
+        return _CUSTOM_KINDS_CACHE
+    from pathlib import Path
+    custom_path = Path("/etc/mypa/kinds.yaml")
+    if not custom_path.is_file():
+        _CUSTOM_KINDS_CACHE = {}
+        return _CUSTOM_KINDS_CACHE
+    try:
+        # Use stdlib yaml if available, else parse a minimal subset.
+        try:
+            import yaml
+            with custom_path.open(encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except ImportError:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        _CUSTOM_KINDS_CACHE = data
+    except Exception:
+        _CUSTOM_KINDS_CACHE = {}
+    return _CUSTOM_KINDS_CACHE
+
+
 def describe_schema() -> dict:
     """Return the kinds catalog + casual-capture mapping hints for tool consumers."""
+    # Merge defaults + custom (custom can override default kinds, or add new ones).
+    merged = {**DEFAULT_KINDS, **_load_custom_kinds()}
     return {
-        "kinds": DEFAULT_KINDS,
+        "kinds": merged,
         "casual_capture_hints": CASUAL_CAPTURE_HINTS,
         "notes": [
             "kind values are open — supply any string. New kinds need no schema migration.",
             "`body` is rich markdown — capture WHY in user's own words, use ## headings.",
             "Wiki-links like [[person:Kepei]] inside body work in later phases (planned).",
             "For decision items, body is append-only (use ## Update YYYY-MM-DD).",
+            "Custom kinds can be added by editing /etc/mypa/kinds.yaml then restarting mypa-api.",
         ],
     }

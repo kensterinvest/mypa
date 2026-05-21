@@ -76,6 +76,8 @@ UNAUTHENTICATED_PATHS = {
     "/oauth/authorize",
     "/oauth/token",
     "/oauth/register",
+    "/auth/login",
+    "/auth/refresh",
 }
 
 

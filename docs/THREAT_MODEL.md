@@ -1,7 +1,8 @@
 # MyPA — threat model
 
-Last updated: 2026-05-21. Applies to single-tenant deployments;
-multi-tenant changes will require an update.
+Last updated: 2026-05-21. Covers single-deployment multi-user model:
+each install (typically a family or small org) has an admin/operator and
+1–10 users; each user's items + reminders are isolated by `user_id`.
 
 ## What MyPA stores
 
@@ -44,7 +45,9 @@ multi-tenant changes will require an update.
 
 | Threat | Mitigation |
 |---|---|
-| **Bearer token leaks** (chat history, shared computer, screenshot, accidental commit) | Rotate easily (see OAUTH_SETUP.md). Existing JWTs survive (signed with separate `OAUTH_JWT_SECRET`). RO + RW separation limits damage from RO leak to read-only. |
+| **User's password leaks** (phishing, weak password, breach of their password manager) | Affects ONLY that user's data — items are isolated by `user_id`. Other users unaffected. Operator can disable a compromised user via `UPDATE users SET disabled_at = datetime('now') WHERE email = '...'` — their existing JWT stays valid until expiry (1h max for access, 30d for refresh); for instant revocation rotate `OAUTH_JWT_SECRET`. |
+| **Admin bearer token leaks** (the operator's `BEARER_TOKEN_RW`) | Maps to admin user → full RW access to ALL data including all users. Rotate immediately. Same procedure as OAUTH_SETUP.md. Existing user JWTs unaffected (signed with `OAUTH_JWT_SECRET`). |
+| **One user attempts to read/mutate another's data via direct API** | Service layer enforces `user_id` filter on every query. `pa_get` returns 404 if item belongs to another user; `pa_delete`/`pa_update` reject silently with 404. Tested in `tests/test_multi_tenant.py`. |
 | **OAuth phishing** (attacker tricks user into authorizing a malicious client) | Strict redirect_uri allow-list at DCR time. Authorize page shows redirect URL prominently with warning. All registrations audit-logged. |
 | **Stolen SQLCipher DB file** (server compromise, leaked backup) | DB is opaque AES bytes without the key. Key lives only in `/etc/mypa/env` (mode 0600) and password manager. Encrypted backups stay safe. |
 | **Stolen `/etc/mypa/env`** (root compromise) | Everything is compromised. There's no defence below root. Mitigate: SSH key-only auth, no password root login, audit log, push-notification on backup failure to detect intrusion. |

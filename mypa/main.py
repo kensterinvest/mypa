@@ -30,10 +30,29 @@ async def lifespan(app: FastAPI):
         raise SystemExit(
             "SQLCIPHER_KEY env var required (or set TEST_NO_ENCRYPTION=true for dev)"
         )
-    # Touch the engine — surfaces SQLCipher key issues at startup, not first
-    # request.
     engine()
+    _ensure_dashboard_client()
     yield
+
+
+def _ensure_dashboard_client() -> None:
+    """Insert a synthetic 'dashboard' row in oauth_clients so refresh tokens
+    issued by /auth/login satisfy the FK constraint. Safe to run on every
+    startup — INSERT OR IGNORE."""
+    try:
+        from sqlalchemy import text
+        from .db import session_factory
+        Session = session_factory()
+        with Session() as db:
+            db.execute(text(
+                "INSERT OR IGNORE INTO oauth_clients "
+                "(client_id, client_secret_hash, name, redirect_uris, scopes) "
+                "VALUES ('dashboard', 'n/a', 'MyPA Dashboard (internal)', '', 'mypa:read mypa:write')"
+            ))
+            db.commit()
+    except Exception:
+        # oauth_clients table may not exist yet on bootstrap; that's OK.
+        pass
 
 
 # Rate limiting — Caddy doesn't ship rate_limit module on this build, so we
@@ -77,6 +96,7 @@ async def ready() -> dict:
 
 
 # Routers
+from .routes import auth_routes  # noqa: E402
 from .routes import items as items_routes  # noqa: E402
 from .routes import oauth as oauth_routes  # noqa: E402
 from .routes import reminders as reminders_routes  # noqa: E402
@@ -87,5 +107,7 @@ app.include_router(reminders_routes.router)
 app.include_router(search_routes.router)
 # OAuth router has paths at /.well-known/* and /oauth/* — mounted at root.
 app.include_router(oauth_routes.router)
+# Dashboard auth (email + password → JWT) at /auth/*
+app.include_router(auth_routes.router)
 
 # MCP mount happens via mypa.mcp_server when run as the MCP service.

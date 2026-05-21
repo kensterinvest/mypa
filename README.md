@@ -10,8 +10,9 @@ Designed to be deployed on your own VPS and used from any MCP client
 - **Auth**: bearer tokens (RW + RO) for direct use; full OAuth 2.1 + PKCE
   for Claude.ai connectors.
 - **Transports**: REST (`/api/*`) and MCP Streamable HTTP (`/mcp/sse`).
-- **Open source, single-tenant per VPS** (multi-tenant pivot planned —
-  see [Roadmap](#roadmap)).
+- **Open source, multi-user per deployment** — designed for a family or
+  small org. Admin provisions users via CLI; each user's items are
+  isolated by `user_id`. Different families each install their own copy.
 
 See **[docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md)** to connect Claude.ai.
 See **[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)** before deploying.
@@ -183,17 +184,18 @@ Key knobs:
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | Core API + SQLCipher DB + MCP (6 tools) | ✅ shipped |
+| 1 | Core API + SQLCipher DB + MCP (10 tools) | ✅ shipped |
 | 1.5 | Nightly snapshot via VACUUM INTO | ✅ shipped |
 | OAuth | OAuth 2.1 + PKCE for Claude.ai connectors | ✅ shipped |
 | MCP CRUD | pa_delete, pa_update, pa_complete, pa_add_reminder | ✅ shipped |
-| Dashboard | Angular SPA (token entry + items list) | ✅ Days 1-2 shipped |
-| **Multi-tenant** | 10-50 operator-provisioned users with `user_id` isolation | ⏳ next session |
+| Dashboard | Angular SPA (email/password login + items list) | ✅ shipped |
+| Multi-tenant | users table + per-user OAuth + isolation tests + admin CLI | ✅ shipped |
+| Productization | LICENSE, setup.sh, deploy/ templates, kinds.yaml loader | ✅ shipped |
 | 2 | Telegram bot — bidirectional capture + reminders | planned |
 | 3 | Image-to-record via Claude vision | planned |
 | 4 | Gmail integration | planned |
 | 5 | Calendar two-way sync | planned |
-| Dashboard Day 3+ | Item detail, markdown rendering, calendar view | planned |
+| Dashboard polish | Item detail, markdown rendering, calendar view | planned |
 
 ---
 
