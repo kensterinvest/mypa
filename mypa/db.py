@@ -63,11 +63,16 @@ def _build_engine() -> Engine:
         conn.execute("PRAGMA kdf_iter = 256000")
         return conn
 
+    # Use plain `sqlite://` dialect with a custom creator — that way
+    # SQLAlchemy doesn't try to set PRAGMA key from URL credentials (which
+    # would conflict with our creator-managed key). sqlcipher3 is API-
+    # compatible with sqlite3, so the standard sqlite dialect works.
     engine = create_engine(
-        "sqlite+pysqlcipher://",
+        "sqlite://",
         creator=_connect,
         future=True,
         echo=False,
+        # connect-time pragma already set by _connect; events below are safe to run
     )
     return engine
 
