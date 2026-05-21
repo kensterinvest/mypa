@@ -15,6 +15,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .settings import settings
 
@@ -28,10 +29,15 @@ def _build_engine() -> Engine:
 
     if s.test_no_encryption:
         # Dev path — plain SQLite. Same schema, same code paths.
-        url = (
-            f"sqlite:///{s.db_path}" if s.db_path != Path(":memory:") else "sqlite:///:memory:"
-        )
-        engine = create_engine(url, future=True, echo=False)
+        is_memory = str(s.db_path) in (":memory:", "memory")
+        url = "sqlite:///:memory:" if is_memory else f"sqlite:///{s.db_path}"
+        kwargs: dict = {"future": True, "echo": False}
+        if is_memory:
+            # All connections must share the same DB — otherwise tables
+            # created in one connection vanish in the next.
+            kwargs["poolclass"] = StaticPool
+            kwargs["connect_args"] = {"check_same_thread": False}
+        engine = create_engine(url, **kwargs)
         return engine
 
     # Production path — SQLCipher.

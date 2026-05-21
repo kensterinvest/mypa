@@ -41,4 +41,13 @@ async def health() -> dict:
     return {"status": "ok", "service": "mypa", "version": __version__}
 
 
-# Routers and MCP mount land in Day 2.
+# Routers
+from .routes import items as items_routes  # noqa: E402
+from .routes import reminders as reminders_routes  # noqa: E402
+from .routes import search as search_routes  # noqa: E402
+
+app.include_router(items_routes.router)
+app.include_router(reminders_routes.router)
+app.include_router(search_routes.router)
+
+# MCP mount happens via mypa.mcp_server when run as the MCP service.
