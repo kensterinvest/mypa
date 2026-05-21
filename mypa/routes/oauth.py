@@ -56,9 +56,11 @@ async def discovery(request: Request) -> dict:
 _LOGIN_FORM = """<!doctype html>
 <html><head><meta charset="utf-8"><title>MyPA — Authorize</title>
 <style>
-  body {{ font-family: system-ui; max-width: 480px; margin: 4rem auto; padding: 1rem; }}
+  body {{ font-family: system-ui; max-width: 540px; margin: 4rem auto; padding: 1rem; }}
   h1 {{ font-size: 1.2rem; }}
   .client {{ background: #f0f0f0; padding: 0.6rem 0.8rem; border-radius: 4px; margin-bottom: 1rem; }}
+  .redirect {{ font-family: monospace; font-size: 0.85rem; word-break: break-all; color: #555; }}
+  .warning {{ background: #fff7d4; border: 1px solid #f0c000; color: #5a4400; padding: 0.5rem 0.7rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.9rem; }}
   label {{ display: block; margin-bottom: 1rem; }}
   input {{ width: 100%; padding: 0.5rem; font: inherit; border: 1px solid #999; border-radius: 4px; }}
   button {{ padding: 0.5rem 1.2rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }}
@@ -66,8 +68,15 @@ _LOGIN_FORM = """<!doctype html>
 </style></head>
 <body>
 <h1>MyPA — Authorize a connection</h1>
-<div class="client"><strong>{client_name}</strong> is requesting access. <br>
-  Scopes: <code>{scope}</code>
+<div class="client">
+  <strong>{client_name}</strong> is requesting access. <br>
+  Scopes: <code>{scope}</code><br>
+  Will redirect to: <span class="redirect">{redirect_uri}</span>
+</div>
+<div class="warning">
+  ⚠️ <strong>Check the redirect URL above.</strong> It should point to a
+  service you trust (e.g. <code>claude.ai</code>). If it points anywhere
+  unexpected — close this tab and do NOT enter your password.
 </div>
 {error_block}
 <form method="POST" action="/oauth/authorize">
@@ -244,24 +253,87 @@ async def token_endpoint(
 
 # ---------- Register (Dynamic Client Registration RFC 7591) -------------
 
+# Allow-list of hostname prefixes for redirect_uri. Adjust as new MCP
+# clients arrive. Defaults to claude.ai only.
+_ALLOWED_REDIRECT_HOSTS = ("claude.ai",)
+
+
+def _validate_redirect_uri(uri: str) -> str | None:
+    """Reject http/IP/localhost/eval-shaped redirect URIs. Returns error
+    string if invalid, None if OK.
+    """
+    from urllib.parse import urlparse
+
+    try:
+        u = urlparse(uri)
+    except Exception:
+        return "could not parse"
+    if u.scheme != "https":
+        return "must be https"
+    if not u.hostname:
+        return "missing hostname"
+    host = u.hostname.lower()
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return "loopback hosts not allowed"
+    # Reject bare IPv4 addresses
+    if all(part.isdigit() for part in host.split(".")):
+        return "bare IP addresses not allowed"
+    # Allow-list check
+    if not any(host == h or host.endswith("." + h) for h in _ALLOWED_REDIRECT_HOSTS):
+        return f"host {host!r} not in allow-list ({_ALLOWED_REDIRECT_HOSTS})"
+    return None
+
+
 @router.post("/oauth/register")
 async def register_endpoint(
     request: Request,
     db: Session = Depends(get_session),
 ):
-    """Public DCR — anyone can register a client and gets credentials back.
-    For a single-user system this is acceptable since the credentials are
-    useless without also passing the /oauth/authorize password step.
+    """Dynamic Client Registration (RFC 7591) with strict redirect_uri
+    allow-list. Only HTTPS URIs on the allow-listed hosts are accepted.
+    The credentials returned are still useless without the bearer-as-password
+    step at /oauth/authorize.
+
+    Set env DISABLE_DCR=true (future flag) to disable entirely once all
+    expected clients are pre-provisioned.
     """
     body = await request.json()
     redirect_uris = body.get("redirect_uris") or []
     if not isinstance(redirect_uris, list) or not redirect_uris:
         return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+
+    for uri in redirect_uris:
+        if not isinstance(uri, str):
+            return JSONResponse(
+                {"error": "invalid_redirect_uri", "detail": "must be strings"},
+                status_code=400,
+            )
+        err = _validate_redirect_uri(uri)
+        if err is not None:
+            # Audit-log every rejected registration attempt
+            from ..audit import audit
+            audit(
+                "_oauth_register_rejected",
+                {"redirect_uri": uri, "client_name": body.get("client_name", "?")},
+                f"rejected: {err}",
+                1,
+            )
+            return JSONResponse(
+                {"error": "invalid_redirect_uri", "detail": f"{uri!r}: {err}"},
+                status_code=400,
+            )
+
     name = body.get("client_name") or "Unnamed client"
     scopes = body.get("scope") or "mypa:read mypa:write"
 
     client = oauth_lib.register_client(
         db, name=name, redirect_uris=redirect_uris, scopes=scopes
+    )
+    from ..audit import audit
+    audit(
+        "_oauth_register_accepted",
+        {"client_id": client["client_id"], "name": name, "redirect_uris": redirect_uris},
+        "client registered",
     )
     return JSONResponse(
         {
