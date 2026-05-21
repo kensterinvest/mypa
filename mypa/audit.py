@@ -54,13 +54,23 @@ def audit(tool: str, args: dict, result_summary: str = "ok", exit_code: int = 0)
 
 
 _REDACT_KEYS = {"body", "image", "image_b64", "audio", "credentials"}
+# Any key containing one of these substrings is also redacted — catches things
+# we didn't think of by name (api_key, refresh_token, etc.).
+_REDACT_SUBSTRINGS = ("password", "secret", "token", "_key", "credential")
+
+
+def _is_sensitive(key: str) -> bool:
+    if key in _REDACT_KEYS:
+        return True
+    lower = key.lower()
+    return any(s in lower for s in _REDACT_SUBSTRINGS)
 
 
 def _redact(args: dict) -> dict:
     """Truncate / drop high-volume or sensitive fields from audit args."""
     out = {}
     for k, v in (args or {}).items():
-        if k in _REDACT_KEYS:
+        if _is_sensitive(k):
             out[k] = f"<redacted {type(v).__name__}>"
             continue
         if isinstance(v, str) and len(v) > 200:

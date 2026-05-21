@@ -36,7 +36,10 @@ def _to_out(item) -> ItemOut:
 
 @router.post("", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
 def post_item(payload: ItemCreate, db: Session = Depends(get_session)) -> ItemOut:
-    item = service.create_item(db, payload)
+    try:
+        item = service.create_item(db, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return _to_out(item)
 
 

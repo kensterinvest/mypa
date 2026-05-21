@@ -20,7 +20,17 @@ from .schemas import ItemCreate, ItemPatch
 def _tags_to_str(tags: list[str] | None) -> str:
     if not tags:
         return ""
-    cleaned = [t.strip().lower() for t in tags if t and t.strip()]
+    cleaned: list[str] = []
+    for t in tags:
+        if not t or not t.strip():
+            continue
+        if "," in t:
+            # Reject comma-containing tags — comma is the storage delimiter.
+            # Users (and Claude) should split into multiple tags themselves.
+            raise ValueError(
+                f"tag {t!r} cannot contain commas; split into multiple tags"
+            )
+        cleaned.append(t.strip().lower())
     return ",".join(sorted(set(cleaned)))
 
 
@@ -118,18 +128,22 @@ def update_item(db: Session, item_id: int, patch: ItemPatch) -> Item | None:
     if "tags" in fields:
         fields["tags"] = _tags_to_str(fields["tags"])
 
-    # Decision append-only convention — see master plan §Decision affordances
+    # Decision append-only convention — see master plan §Decision affordances.
+    # The new body must CONTAIN the existing body verbatim (substring match,
+    # not prefix). This lets callers add prefatory headings, footnotes, or
+    # `## Update YYYY-MM-DD` sections without violating the rule. Cosmetic
+    # whitespace normalization is normalized before comparison.
     if (
         item.kind == "decision"
         and "body" in fields
         and not patch.allow_history_rewrite
     ):
-        new_body = fields["body"] or ""
-        existing = item.body or ""
-        # Body must STRICTLY grow (existing content preserved as a prefix)
-        if not new_body.startswith(existing):
+        new_body = (fields["body"] or "").replace("\r\n", "\n").strip()
+        existing = (item.body or "").replace("\r\n", "\n").strip()
+        if existing and existing not in new_body:
             raise ValueError(
-                "decision body is append-only — set allow_history_rewrite=true to override"
+                "decision body is append-only — existing content must remain "
+                "verbatim in the update. Set allow_history_rewrite=true to override."
             )
 
     for k, v in fields.items():

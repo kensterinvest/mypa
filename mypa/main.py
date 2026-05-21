@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 
 from . import __version__
 from .auth import bearer_auth_middleware
@@ -32,13 +36,44 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# Rate limiting — Caddy doesn't ship rate_limit module on this build, so we
+# enforce here. Bearer auth is still the primary defence; this caps damage
+# from a stolen token. Key on (forwarded IP) when proxied, falling back to
+# direct client.
+def _rate_key(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return fwd or get_remote_address(request)
+
+
+limiter = Limiter(key_func=_rate_key, default_limits=["60/minute"])
+
 app = FastAPI(title="MyPA", version=__version__, lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 app.middleware("http")(bearer_auth_middleware)
 
 
 @app.get("/health")
 async def health() -> dict:
+    """Liveness — the process is up. No DB check."""
     return {"status": "ok", "service": "mypa", "version": __version__}
+
+
+@app.get("/health/ready")
+async def ready() -> dict:
+    """Readiness — DB is reachable. Returns 503 if a DB connection / SELECT fails."""
+    from fastapi import HTTPException
+    from sqlalchemy import text
+    from .db import session_factory
+
+    try:
+        Session = session_factory()
+        with Session() as db:
+            db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"db unreachable: {exc.__class__.__name__}")
+    return {"status": "ready", "service": "mypa", "version": __version__}
 
 
 # Routers

@@ -32,7 +32,7 @@ def classify_token(header_value: str) -> TokenScope | None:
 
 
 WRITE_METHODS = {"POST", "PATCH", "PUT", "DELETE"}
-UNAUTHENTICATED_PATHS = {"/health"}
+UNAUTHENTICATED_PATHS = {"/health", "/health/ready"}
 
 
 async def bearer_auth_middleware(request: Request, call_next):
