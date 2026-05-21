@@ -18,6 +18,21 @@ class TokenScope(str, Enum):
     RO = "ro"
 
 
+def resolve_admin_user_id() -> int | None:
+    """Look up the admin user_id once, lazily. Returns None on bootstrap when no
+    admin exists yet (e.g., during install or before backfill).
+    """
+    from .db import session_factory
+    from .users import get_admin_user
+    try:
+        Session = session_factory()
+        with Session() as db:
+            admin = get_admin_user(db)
+            return admin.id if admin else None
+    except Exception:
+        return None
+
+
 def classify_token(header_value: str) -> TokenScope | None:
     """Return RW / RO scope of the bearer in the Authorization header, or None.
 
@@ -64,17 +79,52 @@ UNAUTHENTICATED_PATHS = {
 }
 
 
-async def bearer_auth_middleware(request: Request, call_next):
-    """Allow /health unauthenticated; everything else needs a valid bearer.
+def _user_id_from_token(header_value: str) -> int | None:
+    """Extract user_id from a bearer.
 
-    Writes (POST/PATCH/PUT/DELETE) require RW. Reads accept either.
-    401 responses include WWW-Authenticate so well-behaved clients know
-    to prompt for / send a bearer.
+    - Static BEARER_TOKEN_RW/RO → admin user_id (lookup)
+    - OAuth JWT with numeric `sub` → that user_id
+    - OAuth JWT with `sub="user"` (legacy single-tenant token) → admin user_id
+    - Anything else → None
+    """
+    if not header_value or not header_value.startswith("Bearer "):
+        return None
+    token = header_value[7:].strip()
+    s = settings()
+    if s.bearer_token_rw and token == s.bearer_token_rw:
+        return resolve_admin_user_id()
+    if s.bearer_token_ro and token == s.bearer_token_ro:
+        return resolve_admin_user_id()
+    if s.oauth_jwt_secret and token.count(".") == 2:
+        try:
+            from . import oauth as oauth_lib
+            claims = oauth_lib.verify_jwt(token)
+            if claims is None:
+                return None
+            sub = claims.get("sub")
+            if isinstance(sub, int):
+                return sub
+            if isinstance(sub, str) and sub.isdigit():
+                return int(sub)
+            # Legacy "user" sub → admin
+            if sub == "user":
+                return resolve_admin_user_id()
+        except Exception:
+            return None
+    return None
+
+
+async def bearer_auth_middleware(request: Request, call_next):
+    """Allow /health (and OAuth endpoints) unauthenticated; everything else
+    needs a valid bearer.
+
+    Sets `request.state.token_scope` and `request.state.user_id` for handlers.
     """
     if request.url.path in UNAUTHENTICATED_PATHS:
         return await call_next(request)
 
-    scope = classify_token(request.headers.get("authorization", ""))
+    auth_header = request.headers.get("authorization", "")
+    scope = classify_token(auth_header)
     if scope is None:
         return JSONResponse(
             {"error": "unauthorized"},
@@ -88,6 +138,6 @@ async def bearer_auth_middleware(request: Request, call_next):
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
-    # Stash scope on request state for handlers that care
     request.state.token_scope = scope
+    request.state.user_id = _user_id_from_token(auth_header)
     return await call_next(request)

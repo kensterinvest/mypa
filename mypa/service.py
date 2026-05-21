@@ -47,8 +47,9 @@ def _append_context(body: str, context: str | None) -> str:
     return (body or "").rstrip() + block
 
 
-def create_item(db: Session, payload: ItemCreate) -> Item:
+def create_item(db: Session, payload: ItemCreate, user_id: int | None = None) -> Item:
     item = Item(
+        user_id=user_id,
         kind=payload.kind.strip().lower(),
         title=payload.title.strip(),
         body=_append_context(payload.body or "", payload.context),
@@ -66,8 +67,14 @@ def create_item(db: Session, payload: ItemCreate) -> Item:
     return item
 
 
-def get_item(db: Session, item_id: int) -> Item | None:
-    return db.get(Item, item_id)
+def get_item(db: Session, item_id: int, user_id: int | None = None) -> Item | None:
+    item = db.get(Item, item_id)
+    if item is None:
+        return None
+    # Scope check: when caller specifies user_id, item must belong to them.
+    if user_id is not None and item.user_id is not None and item.user_id != user_id:
+        return None
+    return item
 
 
 def list_items(
@@ -78,8 +85,11 @@ def list_items(
     tag: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    user_id: int | None = None,
 ) -> list[Item]:
     stmt = select(Item)
+    if user_id is not None:
+        stmt = stmt.where(Item.user_id == user_id)
     if kind:
         stmt = stmt.where(Item.kind == kind.lower())
     if status:
@@ -92,7 +102,7 @@ def list_items(
     return list(db.execute(stmt).scalars())
 
 
-def search_items(db: Session, q: str, limit: int = 20) -> list[Item]:
+def search_items(db: Session, q: str, limit: int = 20, user_id: int | None = None) -> list[Item]:
     """Simple LIKE-based search across title + body + tags.
 
     The master plan calls for FTS5; for MVP we use LIKE so we don't need a
@@ -104,23 +114,21 @@ def search_items(db: Session, q: str, limit: int = 20) -> list[Item]:
     if not q:
         return []
     needle = f"%{q.lower()}%"
-    stmt = (
-        select(Item)
-        .where(
-            or_(
-                Item.title.ilike(needle),
-                Item.body.ilike(needle),
-                Item.tags.ilike(needle),
-            )
+    stmt = select(Item).where(
+        or_(
+            Item.title.ilike(needle),
+            Item.body.ilike(needle),
+            Item.tags.ilike(needle),
         )
-        .order_by(Item.updated_at.desc())
-        .limit(min(limit, 200))
     )
+    if user_id is not None:
+        stmt = stmt.where(Item.user_id == user_id)
+    stmt = stmt.order_by(Item.updated_at.desc()).limit(min(limit, 200))
     return list(db.execute(stmt).scalars())
 
 
-def update_item(db: Session, item_id: int, patch: ItemPatch) -> Item | None:
-    item = db.get(Item, item_id)
+def update_item(db: Session, item_id: int, patch: ItemPatch, user_id: int | None = None) -> Item | None:
+    item = get_item(db, item_id, user_id=user_id)
     if item is None:
         return None
 
@@ -154,8 +162,8 @@ def update_item(db: Session, item_id: int, patch: ItemPatch) -> Item | None:
     return item
 
 
-def complete_item(db: Session, item_id: int) -> Item | None:
-    item = db.get(Item, item_id)
+def complete_item(db: Session, item_id: int, user_id: int | None = None) -> Item | None:
+    item = get_item(db, item_id, user_id=user_id)
     if item is None:
         return None
     item.status = "done"
@@ -166,8 +174,8 @@ def complete_item(db: Session, item_id: int) -> Item | None:
     return item
 
 
-def delete_item(db: Session, item_id: int) -> bool:
-    item = db.get(Item, item_id)
+def delete_item(db: Session, item_id: int, user_id: int | None = None) -> bool:
+    item = get_item(db, item_id, user_id=user_id)
     if item is None:
         return False
     db.delete(item)
@@ -176,37 +184,39 @@ def delete_item(db: Session, item_id: int) -> bool:
 
 
 def add_reminder(
-    db: Session, item_id: int, fire_at: datetime, message: str | None = None, channel: str = "telegram"
+    db: Session, item_id: int, fire_at: datetime, message: str | None = None,
+    channel: str = "telegram", user_id: int | None = None,
 ) -> Reminder | None:
-    item = db.get(Item, item_id)
+    item = get_item(db, item_id, user_id=user_id)
     if item is None:
         return None
-    r = Reminder(item_id=item_id, fire_at=fire_at, message=message, channel=channel)
+    r = Reminder(item_id=item_id, user_id=user_id, fire_at=fire_at, message=message, channel=channel)
     db.add(r)
     db.commit()
     db.refresh(r)
     return r
 
 
-def upcoming_reminders(db: Session, limit: int = 20) -> list[Reminder]:
-    stmt = (
-        select(Reminder)
-        .where(Reminder.fired_at == None)  # noqa: E711
-        .order_by(Reminder.fire_at.asc())
-        .limit(limit)
-    )
+def upcoming_reminders(db: Session, limit: int = 20, user_id: int | None = None) -> list[Reminder]:
+    stmt = select(Reminder).where(Reminder.fired_at == None)  # noqa: E711
+    if user_id is not None:
+        stmt = stmt.where(Reminder.user_id == user_id)
+    stmt = stmt.order_by(Reminder.fire_at.asc()).limit(limit)
     return list(db.execute(stmt).scalars())
 
 
-def undo_last(db: Session, source: str | None = None) -> Item | None:
+def undo_last(db: Session, source: str | None = None, user_id: int | None = None) -> Item | None:
     """Soft-undo: delete the most recently created item, optionally filtered by source.
 
     Used by the 30-second undo window after a save (Telegram inline button)
     and by the `/undo` command. Hard-deletes; we don't track tombstones in MVP.
     """
-    stmt = select(Item).order_by(Item.created_at.desc()).limit(1)
+    stmt = select(Item)
+    if user_id is not None:
+        stmt = stmt.where(Item.user_id == user_id)
     if source:
         stmt = stmt.where(Item.source == source)
+    stmt = stmt.order_by(Item.created_at.desc()).limit(1)
     item = db.execute(stmt).scalar_one_or_none()
     if item is None:
         return None

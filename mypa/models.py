@@ -30,11 +30,13 @@ def utcnow() -> datetime:
 class Item(Base):
     """A single saved record. The `kind` column + JSON `data` column carry all
     kind-specific shape — see master plan §Kinds for the open set.
+    `user_id` scopes the row to a single user in the multi-tenant model.
     """
 
     __tablename__ = "items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)
     kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[str] = mapped_column(Text, default="", nullable=False)
@@ -61,6 +63,7 @@ class Item(Base):
         UniqueConstraint("source", "source_ref", name="uq_items_source_ref"),
         Index("idx_items_kind_status", "kind", "status"),
         Index("idx_items_due", "due_at"),
+        Index("idx_items_user", "user_id"),
     )
 
 
@@ -70,6 +73,7 @@ class Reminder(Base):
     __tablename__ = "reminders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)
     item_id: Mapped[int] = mapped_column(
         ForeignKey("items.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -80,4 +84,7 @@ class Reminder(Base):
 
     item: Mapped[Item] = relationship(back_populates="reminders")
 
-    __table_args__ = (Index("idx_reminders_due", "fire_at"),)
+    __table_args__ = (
+        Index("idx_reminders_due", "fire_at"),
+        Index("idx_reminders_user", "user_id"),
+    )

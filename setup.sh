@@ -193,6 +193,29 @@ sudo -u mypa bash -c "set -a; source $ENV_FILE; set +a; cd $TARGET_DIR; \
     PYTHONPATH=$TARGET_DIR $TARGET_DIR/.venv/bin/python scripts/init_db.py && \
     PYTHONPATH=$TARGET_DIR $TARGET_DIR/.venv/bin/python scripts/apply_migrations.py"
 
+# ---------- 6a. Provision admin user (first one becomes the operator) ----------
+say "Provisioning the admin user (you)…"
+ADMIN_EXISTS=$(sudo -u mypa bash -c "set -a; source $ENV_FILE; set +a; cd $TARGET_DIR; \
+    PYTHONPATH=$TARGET_DIR $TARGET_DIR/.venv/bin/python -c \
+    'from mypa.db import session_factory; from mypa.users import get_admin_user; \
+     Session = session_factory(); db = Session(); \
+     u = get_admin_user(db); print(\"yes\" if u else \"no\")'")
+if [[ "$ADMIN_EXISTS" == "yes" ]]; then
+    warn "An admin user already exists; skipping provisioning."
+else
+    read -r -p "  Admin email: " ADMIN_EMAIL
+    read -r -p "  Admin display name: " ADMIN_NAME
+    ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d "\n=+/" | head -c 18)
+    sudo -u mypa bash -c "set -a; source $ENV_FILE; set +a; cd $TARGET_DIR; \
+        PYTHONPATH=$TARGET_DIR $TARGET_DIR/.venv/bin/python scripts/add_user.py \
+        '$ADMIN_EMAIL' --name '$ADMIN_NAME' --admin --password '$ADMIN_PASSWORD'" \
+        > /tmp/mypa-admin-creds.txt
+    cat /tmp/mypa-admin-creds.txt
+    rm /tmp/mypa-admin-creds.txt
+    echo "  ⚠️ Save the admin email + password above — used to log into the"
+    echo "     dashboard and OAuth /authorize pages."
+fi
+
 # ---------- 7. systemd units ----------
 say "Installing systemd units…"
 cp "$TARGET_DIR/deploy/mypa-api.service" /etc/systemd/system/

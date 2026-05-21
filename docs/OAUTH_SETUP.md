@@ -34,7 +34,7 @@ Claude.ai will:
 
 ## Step 2 — Authorize on the MyPA login form
 
-The form shows:
+The form shows email + password fields:
 
 ```
 MyPA — Authorize a connection
@@ -47,16 +47,23 @@ Will redirect to: https://claude.ai/api/mcp/auth_callback
 (e.g. claude.ai). If it points anywhere unexpected — close this tab and
 do NOT enter your password.
 
-[Your MyPA access password (paste your BEARER_TOKEN_RW): ____________]
-[Authorize]
+[Email:    ________________]
+[Password: ________________]
+[Sign in & Authorize]
 ```
 
 1. **Verify the redirect URL** is a `https://claude.ai/...` address. If
-   it's NOT, close the tab — something fishy is going on (someone is
-   trying to phish you, or you have the wrong server URL).
-2. Paste your `BEARER_TOKEN_RW` (from your password manager) into the
-   password field.
-3. Click **Authorize**.
+   it's NOT, close the tab — something fishy is going on.
+2. Enter your **email** and **password** (the ones your MyPA operator
+   gave you).
+3. Click **Sign in & Authorize**.
+
+### Operator (admin) legacy login
+
+Admins can leave the email field blank and paste the static
+`BEARER_TOKEN_RW` from `/etc/mypa/env` in the password field. This is
+kept for back-compat / setup-script use; for regular use, prefer the
+email + password path.
 
 ## Step 3 — Verify connection
 
@@ -154,6 +161,39 @@ sudo systemctl restart mypa-api mypa-mcp
 
 ⚠️ This **invalidates every existing JWT** — every connected
 Claude.ai must re-authorize.
+
+## Adding family/org members
+
+MyPA is **multi-user within one deployment**. The operator (you, the
+person who ran `setup.sh`) creates accounts for each family member or
+org colleague:
+
+```bash
+sudo -u mypa /opt/mypa/.venv/bin/python /opt/mypa/scripts/add_user.py \
+    alice@example.com --name "Alice"
+```
+
+Prints email + ID + auto-generated password ONCE. Share via your
+preferred secure channel (password-manager share, encrypted DM,
+phone call).
+
+Alice then:
+
+1. Adds the same connector URL in her own claude.ai
+2. On the authorize page, enters her email + password (not yours)
+3. Gets a JWT scoped to her user_id
+
+Her items are isolated from yours — `pa_list` only returns Alice's
+data, `pa_get` on your item id from her session returns 404, etc.
+
+To disable a user (revoke access):
+
+```bash
+# Mark their account disabled — their JWT keeps working until expiry
+# (1h). Rotate OAUTH_JWT_SECRET to force-revoke immediately.
+sudo -u mypa /opt/mypa/.venv/bin/sqlcipher /var/lib/mypa/mypa.db \
+    "UPDATE users SET disabled_at = datetime('now') WHERE email = 'alice@example.com';"
+```
 
 ## Pre-provisioned clients
 

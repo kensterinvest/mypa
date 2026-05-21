@@ -15,10 +15,27 @@ from mypa.db import Base, engine, session_factory
 from mypa.main import app
 
 
-def _client():
+def _client(with_admin: bool = True):
     Base.metadata.create_all(engine())
     from tests.conftest import _apply_oauth_schema
     _apply_oauth_schema()
+    # Apply migration 003 (users + user_id FK) so legacy admin OAuth login works
+    from sqlalchemy import text
+    from pathlib import Path
+    sql = (Path(__file__).parent.parent / "migrations" / "003_users.sql").read_text(encoding="utf-8")
+    sql = "\n".join(l for l in sql.splitlines() if not l.lstrip().startswith("--"))
+    with engine().begin() as conn:
+        for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass
+    if with_admin:
+        from mypa import users as users_lib
+        Session = session_factory()
+        with Session() as db:
+            if users_lib.get_admin_user(db) is None:
+                users_lib.create_user(db, "admin@example.com", "test-rw-token", is_admin=True)
     return TestClient(app)
 
 
@@ -169,7 +186,7 @@ def test_wrong_password_re_renders_form():
         follow_redirects=False,
     )
     assert r.status_code == 200
-    assert "Wrong password" in r.text
+    assert "Wrong email or password" in r.text
 
 
 def test_dynamic_client_registration():

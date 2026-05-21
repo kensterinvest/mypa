@@ -65,6 +65,7 @@ _LOGIN_FORM = """<!doctype html>
   input {{ width: 100%; padding: 0.5rem; font: inherit; border: 1px solid #999; border-radius: 4px; }}
   button {{ padding: 0.5rem 1.2rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }}
   .err {{ color: #842029; background: #f8d7da; padding: 0.5rem; border-radius: 4px; margin-bottom: 1rem; }}
+  small {{ color: #666; font-size: 0.85rem; }}
 </style></head>
 <body>
 <h1>MyPA — Authorize a connection</h1>
@@ -87,10 +88,17 @@ _LOGIN_FORM = """<!doctype html>
   <input type="hidden" name="code_challenge_method" value="{code_challenge_method}">
   <input type="hidden" name="scope" value="{scope}">
   <label>
-    Your MyPA access password (paste your <code>BEARER_TOKEN_RW</code> from the password manager):
-    <input type="password" name="password" autofocus required autocomplete="off">
+    Email
+    <input type="email" name="email" autofocus required autocomplete="username">
+    <small>The email your operator gave you. Admins can also paste the
+    static <code>BEARER_TOKEN_RW</code> in the password field with email
+    left blank for legacy admin access.</small>
   </label>
-  <button type="submit">Authorize</button>
+  <label>
+    Password
+    <input type="password" name="password" required autocomplete="current-password">
+  </label>
+  <button type="submit">Sign in & Authorize</button>
 </form>
 </body></html>
 """
@@ -142,21 +150,41 @@ async def authorize_post(
     code_challenge_method: str = Form("S256"),
     scope: str = Form("mypa:read mypa:write"),
     state: str = Form(""),
+    email: str = Form(""),
     password: str = Form(...),
     db: Session = Depends(get_session),
 ):
-    # Validate password = BEARER_TOKEN_RW (single-user MyPA).
+    """Two auth paths:
+    1. Email + password → user authenticated via users table.
+    2. (Legacy admin) email blank + password == BEARER_TOKEN_RW → admin user.
+    """
+    from .. import users as users_lib
+
     s = settings()
-    if not hmac.compare_digest(password.encode(), s.bearer_token_rw.encode()):
+    user = None
+
+    if email.strip():
+        # Per-user login
+        user = users_lib.authenticate(db, email.strip(), password)
+    elif s.bearer_token_rw and hmac.compare_digest(password.encode(), s.bearer_token_rw.encode()):
+        # Legacy admin login
+        user = users_lib.get_admin_user(db)
+        if user is None:
+            # Bootstrap: no admin yet, but admin bearer matches. Allow with
+            # virtual admin id = 0 (will be set up by setup.sh / backfill).
+            user = None  # fall through to error — refuse until admin exists
+
+    if user is None:
         return _render_form(
-            client_name="<unknown — invalid login>",
+            client_name="<invalid login>",
             client_id=client_id,
             redirect_uri=redirect_uri,
             state=state,
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
             scope=scope,
-            error_block='<div class="err">Wrong password. Try again.</div>',
+            error_block='<div class="err">Wrong email or password. Try again. '
+                        '(Admins: leave email blank and paste the static BEARER_TOKEN_RW.)</div>',
         )
 
     client = oauth_lib.get_client(db, client_id)
@@ -170,7 +198,7 @@ async def authorize_post(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
         scope=scope,
-        user_subject="user",  # single-user
+        user_subject=str(user.id),  # JWT will carry sub=<user_id>
     )
     params = {"code": code}
     if state:
