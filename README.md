@@ -14,8 +14,11 @@ Designed to be deployed on your own VPS and used from any MCP client
   small org. Admin provisions users via CLI; each user's items are
   isolated by `user_id`. Different families each install their own copy.
 
-See **[docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md)** to connect Claude.ai.
-See **[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)** before deploying.
+Docs:
+- **[docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md)** — connect Claude.ai
+- **[docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md)** — operators: add users, backups, rotation
+- **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** — end users: dashboard + Claude
+- **[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)** — read before deploying
 
 ---
 
@@ -210,8 +213,9 @@ export TEST_NO_ENCRYPTION=true     # Windows: no SQLCipher wheel
 pytest -q
 ```
 
-29 tests covering items CRUD, OAuth flow, DCR validation, decision
-append-only enforcement, RW/RO token scoping.
+34 tests covering items CRUD, OAuth flow, DCR validation, decision
+append-only enforcement, RW/RO token scoping, and multi-tenant
+user isolation.
 
 ---
 
