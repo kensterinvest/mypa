@@ -1,0 +1,25 @@
+[Unit]
+Description=MyPA REST API (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mypa
+Group=mypa
+WorkingDirectory=/opt/mypa
+EnvironmentFile=/etc/mypa/env
+Environment=PYTHONPATH=/opt/mypa
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/mypa/.venv/bin/uvicorn mypa.main:app --host 127.0.0.1 --port 8022 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/mypa /var/log
+
+[Install]
+WantedBy=multi-user.target

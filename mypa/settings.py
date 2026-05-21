@@ -21,10 +21,12 @@ class Settings(BaseSettings):
     )
 
     # --- Identity (productization) ---
-    public_host: str = Field(default="mypa.z-tidus.com")
+    # `public_host` has no default — every deployment MUST set its own.
+    # Example values: "mypa.example.com", "pa.alice-domain.org", etc.
+    public_host: str = Field(default="")
     user_name: str = Field(default="user")
     tz: str = Field(default="Etc/UTC")
-    locale: str = Field(default="en-GB")
+    locale: str = Field(default="en-US")
 
     # --- Auth ---
     bearer_token_rw: str = Field(default="")  # required at boot; fail-fast in main

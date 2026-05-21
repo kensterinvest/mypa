@@ -1,0 +1,24 @@
+[Unit]
+Description=MyPA MCP server (Streamable HTTP for Claude.ai)
+After=network-online.target mypa-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mypa
+Group=mypa
+WorkingDirectory=/opt/mypa
+EnvironmentFile=/etc/mypa/env
+Environment=PYTHONPATH=/opt/mypa
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/mypa/.venv/bin/uvicorn mypa.mcp_server:app --host 127.0.0.1 --port 8023 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/mypa /var/log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,42 @@
+# MyPA Caddyfile snippet. Replace MYPA_HOST with your domain (e.g. mypa.example.com)
+# and append this block to /etc/caddy/Caddyfile, then `caddy validate` + `systemctl reload caddy`.
+
+MYPA_HOST {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# OAuth discovery + endpoints — proxied to mypa-api
+	handle /.well-known/oauth-authorization-server {
+		reverse_proxy 127.0.0.1:8022
+	}
+	handle /oauth/* {
+		reverse_proxy 127.0.0.1:8022
+	}
+
+	# MCP transport — proxied to mypa-mcp (Streamable HTTP, what Claude.ai uses)
+	handle_path /mcp/* {
+		reverse_proxy 127.0.0.1:8023 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# REST API — proxied to mypa-api
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:8022 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# Dashboard SPA — static files from /var/www/mypa-dashboard
+	# Comment out this whole handle block if you don't want the dashboard.
+	handle {
+		root * /var/www/mypa-dashboard
+		try_files {path} /index.html
+		file_server
+	}
+}
