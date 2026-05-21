@@ -31,6 +31,11 @@ from .settings import settings
 s = settings()
 mcp = FastMCP(
     name="mypa",
+    # Override default streamable HTTP path ("/mcp") to "/sse" so the
+    # public URL https://mypa.z-tidus.com/mcp/sse continues to work
+    # (Caddy strips the /mcp/ prefix; backend sees /sse). Claude.ai's
+    # Custom MCP uses Streamable HTTP transport, NOT classic SSE.
+    streamable_http_path="/sse",
     transport_security=TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=[s.public_host, "127.0.0.1", "localhost"],
@@ -233,7 +238,24 @@ def pa_undo_last(source: str | None = None) -> dict:
 # -----------------------------------------------------------------------------
 # Outer FastAPI app with bearer auth — same shape as admin-mcp
 # -----------------------------------------------------------------------------
-app = FastAPI(title="MyPA-MCP", version=__version__)
+
+# Build the Streamable HTTP MCP app once at import; reuse its lifespan.
+_mcp_app = mcp.streamable_http_app()
+
+
+from contextlib import asynccontextmanager  # noqa: E402
+
+
+@asynccontextmanager
+async def lifespan(app):
+    """Delegate startup/shutdown to the inner MCP app — needed for Streamable
+    HTTP's session manager task group to be initialized.
+    """
+    async with _mcp_app.router.lifespan_context(_mcp_app):
+        yield
+
+
+app = FastAPI(title="MyPA-MCP", version=__version__, lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -257,5 +279,5 @@ async def health() -> dict:
     return {"status": "ok", "service": "mypa-mcp", "version": __version__}
 
 
-# Mount the MCP SSE app
-app.mount("/", mcp.sse_app())
+# Mount the Streamable HTTP transport (what Claude.ai uses).
+app.mount("/", _mcp_app)
