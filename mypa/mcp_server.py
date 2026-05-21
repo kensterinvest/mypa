@@ -235,6 +235,133 @@ def pa_undo_last(source: str | None = None) -> dict:
     return {"removed_id": item.id, "title": item.title, "kind": item.kind}
 
 
+@mcp.tool()
+def pa_delete(item_id: int, confirm: bool = False) -> dict:
+    """Delete an item by id. **Destructive — requires confirm=True.**
+
+    Use when the user explicitly says "delete", "remove", "forget", "scrap"
+    a specific item they identified. Always show the user what you'll
+    delete and require their go-ahead before calling with confirm=True.
+
+    For "undo the last save" use pa_undo_last instead.
+    """
+    if not confirm:
+        audit("pa_delete", {"item_id": item_id, "confirm": confirm}, "blocked: confirm=False", 1)
+        return {
+            "error": "confirm=True required",
+            "detail": "Show the user the item first (call pa_get) and ask them to confirm.",
+        }
+    Session = session_factory()
+    with Session() as db:
+        item = service.get_item(db, item_id)
+        if item is None:
+            audit("pa_delete", {"item_id": item_id}, "not found", 1)
+            return {"error": "not found", "item_id": item_id}
+        title = item.title
+        kind = item.kind
+        service.delete_item(db, item_id)
+    audit("pa_delete", {"item_id": item_id, "confirm": True}, f"deleted {kind!r} {title!r}")
+    return {"deleted_id": item_id, "title": title, "kind": kind}
+
+
+@mcp.tool()
+def pa_update(
+    item_id: int,
+    title: str | None = None,
+    body: str | None = None,
+    status: str | None = None,
+    priority: int | None = None,
+    due_at: str | None = None,
+    tags: list[str] | None = None,
+    data: dict[str, Any] | None = None,
+    allow_history_rewrite: bool = False,
+) -> dict:
+    """Partial update on an item. Only the fields you pass get changed.
+
+    Special rule for `kind='decision'` items: `body` is APPEND-ONLY by
+    convention. The new body must contain the existing body verbatim
+    (substring). Set `allow_history_rewrite=True` to override (audit-logged).
+
+    Use when the user says "change", "update", "edit", "rename", "mark
+    as done", "snooze", "reschedule", or wants to add an `## Update
+    YYYY-MM-DD` section to a decision.
+    """
+    from .schemas import ItemPatch
+    from datetime import datetime
+
+    patch_kwargs: dict[str, Any] = {"allow_history_rewrite": allow_history_rewrite}
+    if title is not None: patch_kwargs["title"] = title
+    if body is not None: patch_kwargs["body"] = body
+    if status is not None: patch_kwargs["status"] = status
+    if priority is not None: patch_kwargs["priority"] = priority
+    if due_at is not None: patch_kwargs["due_at"] = datetime.fromisoformat(due_at)
+    if tags is not None: patch_kwargs["tags"] = tags
+    if data is not None: patch_kwargs["data"] = data
+
+    patch = ItemPatch(**patch_kwargs)
+    Session = session_factory()
+    try:
+        with Session() as db:
+            item = service.update_item(db, item_id, patch)
+    except ValueError as e:
+        audit("pa_update", {"item_id": item_id}, f"rejected: {e}", 1)
+        return {"error": str(e)}
+    if item is None:
+        audit("pa_update", {"item_id": item_id}, "not found", 1)
+        return {"error": "not found", "item_id": item_id}
+    audit("pa_update", {"item_id": item_id, "fields": list(patch_kwargs.keys())}, "updated")
+    return _serialize(item)
+
+
+@mcp.tool()
+def pa_complete(item_id: int) -> dict:
+    """Mark an item as done. Sets status='done' and completed_at=now.
+
+    Use when the user says "I did X", "X is done", "completed X", "finished X",
+    "mark X as done", or anything that signals an open todo / task is now complete.
+    """
+    Session = session_factory()
+    with Session() as db:
+        item = service.complete_item(db, item_id)
+    if item is None:
+        audit("pa_complete", {"item_id": item_id}, "not found", 1)
+        return {"error": "not found", "item_id": item_id}
+    audit("pa_complete", {"item_id": item_id}, "completed")
+    return _serialize(item)
+
+
+@mcp.tool()
+def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> dict:
+    """Schedule a reminder for an item. The reminder fires via Telegram
+    once the Phase 2 worker is live (not yet). Stored regardless so it'll
+    fire as soon as the worker comes online.
+
+    `fire_at` is ISO 8601 (e.g. "2026-05-22T15:30:00+01:00").
+    Use when the user says "remind me", "alert me", "tell me at", "ping me".
+    """
+    from datetime import datetime
+    Session = session_factory()
+    with Session() as db:
+        r = service.add_reminder(
+            db, item_id=item_id,
+            fire_at=datetime.fromisoformat(fire_at),
+            message=message,
+            channel="telegram",
+        )
+    if r is None:
+        audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, "item not found", 1)
+        return {"error": "item not found", "item_id": item_id}
+    audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, f"reminder id={r.id}")
+    return {
+        "reminder_id": r.id,
+        "item_id": r.item_id,
+        "fire_at": r.fire_at.isoformat(),
+        "message": r.message,
+        "channel": r.channel,
+        "note": "Reminder stored. Telegram delivery worker not yet active — will fire once Phase 2 ships.",
+    }
+
+
 # -----------------------------------------------------------------------------
 # Outer FastAPI app with bearer auth — same shape as admin-mcp
 # -----------------------------------------------------------------------------
