@@ -21,6 +21,30 @@ ROLE="${1:-api}"
 : "${OAUTH_JWT_SECRET:?OAUTH_JWT_SECRET env var required}"
 : "${PUBLIC_HOST:?PUBLIC_HOST env var required}"
 
+# Reject .env.example placeholder values — a lazy operator who runs
+# `docker compose up -d` without editing .env would otherwise boot a
+# stack with `REPLACE-WITH-RANDOM-...` as the bearer token. Loud fail.
+for var in BEARER_TOKEN_RW BEARER_TOKEN_RO OAUTH_JWT_SECRET SQLCIPHER_KEY \
+           NTFY_ADMIN_PASSWORD NTFY_PUBLISH_PASSWORD MYPA_ADMIN_PASSWORD; do
+    eval "v=\${$var:-}"
+    case "$v" in
+        REPLACE-WITH-*|change-this-*)
+            echo "[mypa] FATAL: $var is still set to the .env.example placeholder."  >&2
+            echo "[mypa]        Generate a real value and edit your .env file."       >&2
+            echo "[mypa]        Suggestion: openssl rand -base64 48 | tr -d '\n=+/' | head -c 64"  >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Caddy-specific: surface a clear warning if LETSENCRYPT_EMAIL is
+# unset or still example.com (Let's Encrypt has rate-limited that
+# address; you'd hit a cryptic Caddy log error otherwise).
+if [[ "${LETSENCRYPT_EMAIL:-}" == "" || "${LETSENCRYPT_EMAIL:-}" == *example.com ]]; then
+    echo "[mypa] WARN: LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-(empty)} — Caddy may not be able to" >&2
+    echo "[mypa]       get a TLS certificate. Set it to your real email in .env."                 >&2
+fi
+
 # Defaults — match bare-metal install conventions
 export DB_PATH="${DB_PATH:-/var/lib/mypa/mypa.db}"
 export BLOB_DIR="${BLOB_DIR:-/var/lib/mypa/blobs}"

@@ -38,8 +38,16 @@ services:
     volumes:
       - mypa-data:/var/lib/mypa
       - mypa-logs:/var/log/mypa
+      # Share the ntfy auth.db so mypa-api's sudo'd `ntfy user add/remove`
+      # writes to the SAME file the ntfy server reads. Both containers
+      # see /var/lib/ntfy as the same volume; root in mypa-api can rw
+      # regardless of file ownership.
+      - ntfy-data:/var/lib/ntfy
     command: ["api"]
     networks: [mypa-net]
+    depends_on:
+      ntfy:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8022/health"]
       interval: 30s
@@ -62,6 +70,7 @@ services:
     volumes:
       - mypa-data:/var/lib/mypa
       - mypa-logs:/var/log/mypa
+      - ntfy-data:/var/lib/ntfy
     command: ["mcp"]
     networks: [mypa-net]
     depends_on:
@@ -72,7 +81,8 @@ services:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
-    env_file: .env
+    # Scoped env — ntfy doesn't need MyPA's bearer tokens or SQLCipher key.
+    # Only the ntfy admin/publisher credentials cross this boundary.
     environment:
       NTFY_BASE_URL: https://${NTFY_HOST}
       NTFY_LISTEN_HTTP: ":80"
@@ -81,6 +91,10 @@ services:
       NTFY_AUTH_DEFAULT_ACCESS: deny-all
       NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
       NTFY_CACHE_DURATION: "12h"
+      NTFY_ADMIN_USER: ${NTFY_ADMIN_USER}
+      NTFY_ADMIN_PASSWORD: ${NTFY_ADMIN_PASSWORD}
+      NTFY_PUBLISH_USER: ${NTFY_PUBLISH_USER}
+      NTFY_PUBLISH_PASSWORD: ${NTFY_PUBLISH_PASSWORD}
     volumes:
       - ntfy-cache:/var/cache/ntfy
       - ntfy-data:/var/lib/ntfy
@@ -103,10 +117,12 @@ services:
         DASHBOARD_REF: ${DASHBOARD_REF:-main}
     container_name: caddy
     restart: unless-stopped
+    # Scoped env — Caddy only needs the public hostnames + ACME email.
+    # Bearer tokens / SQLCipher key never enter this container.
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST}
       NTFY_HOST: ${NTFY_HOST}
-      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
     ports:
       - "80:80"
       - "443:443"
