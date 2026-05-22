@@ -10,7 +10,8 @@
 [📖 Quick start](#quick-start) &nbsp;·&nbsp;
 [🛡️ Security policy](SECURITY.md) &nbsp;·&nbsp;
 [📝 Changelog](CHANGELOG.md) &nbsp;·&nbsp;
-[⚙️ Admin guide](docs/ADMIN_GUIDE.md)
+[⚙️ Admin guide](docs/ADMIN_GUIDE.md) &nbsp;·&nbsp;
+[👤 User guide](docs/USER_GUIDE.md)
 
 [![CI](https://github.com/kensterinvest/mypa/actions/workflows/ci.yml/badge.svg)](https://github.com/kensterinvest/mypa/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7CC4FF)](LICENSE)
@@ -132,8 +133,7 @@ Full walkthrough: [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md) and
 | [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) | ntfy setup, push notifications, mobile app config |
 | [docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) | Operators — user management, backups, rotation, recovery |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | End users — dashboard + Claude usage |
-| [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | What's protected, what isn't |
-| [SECURITY.md](SECURITY.md) | Vulnerability disclosure |
+| [SECURITY.md](SECURITY.md) | Vulnerability disclosure policy |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 
 ## Development

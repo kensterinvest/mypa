@@ -404,4 +404,7 @@ color 32 "================================================================"
 echo "  Next steps:"
 echo "    1. Register Claude.ai connector  → docs/OAUTH_SETUP.md"
 echo "    2. Set up your phone notifications → docs/NOTIFICATIONS.md"
+echo
+echo "  Operator-only docs (not in public repo, copy from install):"
+echo "    - threat model + attack-surface notes: see private/ if available"
 echo "================================================================"

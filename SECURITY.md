@@ -1,8 +1,7 @@
 # Security policy
 
-MyPA stores personal data — items, decisions, attachments, push
-credentials — and connects to third-party services on behalf of its
-users. Security issues are taken seriously.
+MyPA stores personal data and connects to third-party services on behalf
+of its users. Security issues are taken seriously.
 
 ## Reporting a vulnerability
 
@@ -20,6 +19,8 @@ Instead, email **security@hyson.life** with:
 You'll get an acknowledgement within **3 working days**. If you don't,
 re-send — your first email may have been filtered.
 
+## Response timeline
+
 We aim to:
 
 - Confirm or reject within **7 working days**
@@ -34,22 +35,21 @@ In scope:
 
 - The MyPA backend (`mypa/` directory): REST API, MCP server, OAuth
   endpoints, attachment handling, notification dispatch
-- The MyPA dashboard (`mypa-dashboard/` repo): authentication flow,
-  JWT/refresh-token handling, attachment rendering
-- The `setup.sh` installer and `deploy/` systemd / Caddy templates
+- The MyPA dashboard (separate repo `kensterinvest/mypa-dashboard`):
+  authentication flow, token handling, attachment rendering
+- The `setup.sh` installer and `deploy/` templates
 - The ntfy server configuration and `mypa/ntfy_admin.py` user lifecycle
-- Documented threat-model claims in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)
 
 Out of scope (report to the upstream project):
 
 - Bugs in third-party dependencies (FastAPI, SQLCipher, ntfy, Caddy,
-  Anthropic SDK, etc.) — these belong to those projects
-- Operator-misconfiguration scenarios (e.g. running with default
-  `BEARER_TOKEN_RW=changeme`)
+  Anthropic SDK, etc.)
+- Operator-misconfiguration scenarios (e.g. running with a default
+  bearer token)
 - Anything requiring physical access to the VPS or its disks
 - Issues in the user's own Claude.ai connector setup
 - Notification content visible to APNs/FCM (documented limitation;
-  not a MyPA-specific issue)
+  inherent to iOS/Android push, not MyPA-specific)
 
 ## What is NOT considered a vulnerability
 
@@ -59,14 +59,13 @@ Out of scope (report to the upstream project):
 - Self-hosted deployments where the operator misconfigures Caddy / UFW /
   systemd
 - iOS background-delivery latency on self-hosted ntfy (documented
-  tradeoff in [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md))
+  tradeoff)
 
 ## Coordinated disclosure
 
-We follow standard 90-day coordinated disclosure. If you've reported
-to us and 90 days have passed without a fix, you may disclose publicly.
-If you need to disclose earlier (e.g. active exploitation), email and
-let us know.
+Standard 90-day coordinated disclosure. If 90 days pass without a fix,
+you may disclose publicly. Earlier disclosure (e.g. active exploitation)
+is acceptable — email and let us know.
 
 ## Supported versions
 
@@ -75,24 +74,3 @@ let us know.
 | `main` branch (HEAD) | actively supported |
 | latest released tag | actively supported |
 | previous tags | best-effort; please upgrade |
-
-Pre-`v1.0` there are no LTS branches — users on `main` get the
-strongest security posture; users pinned to older revisions should
-upgrade or accept the risk.
-
-## Hardening defaults
-
-These are the production defaults documented across this repo. If you
-discover a configuration that the docs claim is enabled but isn't, that
-is a reportable bug:
-
-- ntfy `auth-default-access: deny-all` — anonymous publish AND subscribe
-  both denied
-- SQLCipher AES-256 with PBKDF2 256k iterations for the application DB
-- OAuth 2.1 with PKCE; DCR redirect-URI allow-list restricted to
-  `claude.ai`
-- Bearer auth required on all REST + MCP routes except `/health`
-- Multi-tenant `user_id` scoping enforced at the service layer (verified
-  by `test_multi_tenant.py` and `test_ntfy_account_lifecycle_with_user_mgmt`)
-- Attachments served `Content-Disposition: attachment` +
-  `X-Content-Type-Options: nosniff`
