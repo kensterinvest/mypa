@@ -1,0 +1,63 @@
+# Caddy config for the MyPA Docker stack.
+#
+# Two virtual hosts:
+#   {$PUBLIC_HOST}     — landing site + dashboard + API + MCP + OAuth
+#   {$NTFY_HOST}       — ntfy server (optional; can leave NTFY_HOST="")
+#
+# Env-var substitution uses Caddy's {$VAR} syntax. The compose file
+# passes PUBLIC_HOST and NTFY_HOST in.
+
+{
+    email {$LETSENCRYPT_EMAIL:admin@example.com}
+}
+
+{$PUBLIC_HOST} {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # OAuth discovery + endpoints — Claude.ai connectors rely on these
+    handle /.well-known/oauth-authorization-server {
+        reverse_proxy mypa-api:8022
+    }
+    handle /oauth/* {
+        reverse_proxy mypa-api:8022
+    }
+    handle /auth/* {
+        reverse_proxy mypa-api:8022
+    }
+
+    # MCP transport
+    handle_path /mcp/* {
+        reverse_proxy mypa-mcp:8023
+    }
+
+    # REST API
+    handle_path /api/* {
+        reverse_proxy mypa-api:8022
+    }
+
+    # Dashboard SPA at /app/* — handle_path strips /app prefix.
+    # Angular built with --base-href=/app/ so browser URLs stay /app/*.
+    handle_path /app* {
+        root * /var/www/mypa-dashboard
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Landing page at root
+    handle {
+        root * /var/www/mypa-site
+        try_files {path} {path}/ /index.html
+        file_server
+    }
+}
+
+{$NTFY_HOST} {
+    encode gzip zstd
+    reverse_proxy ntfy:80
+}

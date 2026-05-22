@@ -1,0 +1,132 @@
+# =============================================================
+# MyPA — Docker Compose stack
+#
+# What this brings up:
+#   - mypa-api    (FastAPI + OAuth + REST + auth) on internal :8022
+#   - mypa-mcp    (MCP Streamable HTTP) on internal :8023
+#   - ntfy        (self-hosted push, auth enabled) on internal :80
+#   - caddy       (TLS terminator, reverse proxy, static site + SPA)
+#                 — exposes :80/:443 to the host
+#
+# Single .env file at the same directory holds all secrets + the two
+# hostnames (PUBLIC_HOST, NTFY_HOST). See .env.example for the
+# complete list.
+#
+# Usage:
+#   cp .env.example .env
+#   # edit .env: set the hostnames + secrets, save
+#   docker compose up -d
+#
+# First boot will create the admin user from MYPA_ADMIN_EMAIL +
+# MYPA_ADMIN_PASSWORD if no admin exists. Subsequent boots are no-ops.
+# =============================================================
+
+services:
+
+  mypa-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: mypa-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /var/lib/mypa/mypa.db
+      BLOB_DIR: /var/lib/mypa/blobs
+      AUDIT_LOG_PATH: /var/log/mypa/mypa-mcp.log
+      NTFY_BASE_URL: https://${NTFY_HOST}
+    volumes:
+      - mypa-data:/var/lib/mypa
+      - mypa-logs:/var/log/mypa
+    command: ["api"]
+    networks: [mypa-net]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8022/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  mypa-mcp:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: mypa-mcp
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /var/lib/mypa/mypa.db
+      BLOB_DIR: /var/lib/mypa/blobs
+      AUDIT_LOG_PATH: /var/log/mypa/mypa-mcp.log
+      NTFY_BASE_URL: https://${NTFY_HOST}
+    volumes:
+      - mypa-data:/var/lib/mypa
+      - mypa-logs:/var/log/mypa
+    command: ["mcp"]
+    networks: [mypa-net]
+    depends_on:
+      mypa-api:
+        condition: service_healthy
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NTFY_BASE_URL: https://${NTFY_HOST}
+      NTFY_LISTEN_HTTP: ":80"
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+      NTFY_AUTH_DEFAULT_ACCESS: deny-all
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_CACHE_DURATION: "12h"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-data:/var/lib/ntfy
+      - ./ntfy/init.sh:/etc/ntfy/init.sh:ro
+    entrypoint: ["/bin/sh", "/etc/ntfy/init.sh"]
+    networks: [mypa-net]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: docker/caddy/Dockerfile
+      args:
+        DASHBOARD_REPO: ${DASHBOARD_REPO:-https://github.com/kensterinvest/mypa-dashboard.git}
+        DASHBOARD_REF: ${DASHBOARD_REF:-main}
+    container_name: caddy
+    restart: unless-stopped
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST}
+      NTFY_HOST: ${NTFY_HOST}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [mypa-net]
+    depends_on:
+      - mypa-api
+      - mypa-mcp
+      - ntfy
+
+volumes:
+  mypa-data:
+  mypa-logs:
+  ntfy-cache:
+  ntfy-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  mypa-net:
+    driver: bridge

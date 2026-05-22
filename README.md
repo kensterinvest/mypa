@@ -76,6 +76,24 @@ durable, structured facts of your life.
 
 ## Quick start
 
+Two install paths — pick one:
+
+### Option A · Docker (NAS, home server, anywhere Docker runs)
+
+```bash
+git clone https://github.com/kensterinvest/mypa.git
+cd mypa/docker
+cp .env.example .env
+# edit .env: set PUBLIC_HOST, NTFY_HOST, secrets, admin email
+docker compose up -d
+```
+
+Brings up API + MCP + ntfy + Caddy-with-TLS as four containers. Works
+on **Synology / QNAP / Unraid / TrueNAS, Raspberry Pi, any Docker host.**
+Full walkthrough → [docker/README.md](docker/README.md).
+
+### Option B · Bare-metal Ubuntu (VPS or fresh server)
+
 You'll need: a Linux VPS (Hetzner, IONOS, DigitalOcean — ~£8-15/mo), a
 domain pointed at it, root SSH.
 

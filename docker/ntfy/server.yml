@@ -1,0 +1,19 @@
+# ntfy config inside the Docker compose stack.
+# Auth is on by default; the Compose entrypoint provisions the admin
+# and mypa-publisher users on first start (see docker/ntfy/init.sh).
+
+base-url: "https://${NTFY_HOST}"
+listen-http: ":80"
+behind-proxy: true
+
+auth-file: "/var/lib/ntfy/auth.db"
+auth-default-access: "deny-all"
+
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "12h"
+
+attachment-cache-dir: "/var/cache/ntfy/attachments"
+attachment-total-size-limit: "100M"
+
+visitor-request-limit-burst: 60
+visitor-message-daily-limit: 500

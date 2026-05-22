@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+node_modules
+docs/THREAT_MODEL.md
+tests
+.env
+*.log
+mypa-dashboard
+site/dist
