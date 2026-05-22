@@ -16,6 +16,7 @@ Designed to be deployed on your own VPS and used from any MCP client
 
 Docs:
 - **[docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md)** — connect Claude.ai
+- **[docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)** — push notifications via self-hosted ntfy
 - **[docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md)** — operators: add users, backups, rotation
 - **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** — end users: dashboard + Claude
 - **[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)** — read before deploying
