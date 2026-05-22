@@ -19,8 +19,10 @@ This doc has two halves:
 You should have been given:
 - Your dashboard URL (e.g. `https://mypa.example.com/`)
 - Your email + password
-- A **subscribe URL** — looks like `https://ntfy.example.com/u-XXXXXXXXXXXXXXXX`
-  (your operator can fetch yours by calling `GET /me/notify-prefs`)
+
+After login, your **ntfy credentials** (server URL, username, password)
+are available at `GET /me/notify-prefs`. The mobile-app setup below
+shows you how to use them.
 
 ### 1. Install the ntfy mobile app
 
@@ -31,16 +33,41 @@ You should have been given:
 
 (The app is free and open-source.)
 
-### 2. Subscribe to your topic
+### 2. Get your credentials
 
-1. Open the ntfy app → tap **+** (add subscription) → **Subscribe to topic**
-2. Tap **Use another server** → enter your operator's ntfy URL, e.g.
-   `https://ntfy.example.com`
-3. **Topic:** paste the `u-XXXXXXXXXXXXXXXX` portion of your subscribe URL
-   (just the topic name, not the full URL)
-4. Tap **Subscribe**
+```bash
+curl -sS -H "Authorization: Bearer <YOUR_JWT>" \
+  https://mypa.example.com/api/me/notify-prefs
+```
 
-### 3. Test it
+You'll get back something like:
+```json
+{
+  "ntfy_server": "https://ntfy.example.com",
+  "ntfy_username": "u-4281195b6832d817",
+  "ntfy_password": "hrrmXL85hfEIDeu9YHj5BEb-",
+  "topic": "u-4281195b6832d817",
+  ...
+}
+```
+
+Or just ask Claude: *"show me my MyPA notification credentials"*.
+
+### 3. Subscribe in the ntfy app
+
+1. Open the ntfy app → **Settings → Users** → **+** (add user)
+2. **Server URL:** paste `ntfy_server` (e.g. `https://ntfy.example.com`)
+3. **Username + Password:** paste from the credentials response above
+4. Back on the home screen → tap **+** → **Subscribe to topic**
+5. Tap **Use another server** → select the server you just added
+6. **Topic:** paste `topic` value (the `u-…` string)
+7. Tap **Subscribe**
+
+The mobile app will use Basic auth on all subsequent connections. Without
+the username + password, subscribing returns 401 even if someone knows the
+topic name.
+
+### 4. Test it
 
 In any Claude chat with the MyPA connector connected:
 
@@ -56,7 +83,7 @@ curl -X POST -H "Authorization: Bearer <YOUR_JWT>" \
 You should see a notification arrive on your phone within ~1 second
 (iOS may take up to ~30s if the app has been backgrounded for a while).
 
-### 4. Adjust your preferences
+### 5. Adjust your preferences
 
 In a Claude chat:
 
@@ -87,82 +114,73 @@ Available fields:
 | `overdue_day` | int 0-6 | `0` (Sun) | Day of week for the weekly catch-up |
 | `overdue_hour` | int 0-23 | `9` | Hour of day for the weekly catch-up |
 
-### 5. If your subscribe URL leaks
+### 6. If your credentials leak
 
-Anyone with your subscribe URL can read your notifications (and, under
-the current model, send fake ones). If you accidentally shared it,
-rotate immediately:
+If your `ntfy_password` (or the JSON blob containing it) is exposed —
+shared screenshot, accidental paste, lost device — rotate immediately:
 
 ```bash
 curl -X POST -H "Authorization: Bearer <JWT>" \
   https://mypa.example.com/api/me/notify-topic/rotate
 ```
 
-The response includes your new `subscribe_url`. Update the ntfy app on
-each device. The old topic stops being used by MyPA but is **not
-guaranteed deleted on the ntfy server** under the current model — see
-the security section below.
+The response contains a brand-new `topic`, `ntfy_username`, and
+`ntfy_password`. Update the ntfy app on each device.
+
+**True revocation:** the old ntfy account is deleted server-side, so
+the old password stops working immediately — not just "stopped being
+used by MyPA." Anyone who had the old credentials gets 401 on next
+subscribe attempt.
 
 ---
 
-## Security model and limitations
+## Security model
 
-**Be honest about what this protects against.** The current default
-deployment uses *unguessable topic names* as the only privacy
-boundary. It is `secret-URL` security, not authenticated security.
+ntfy is configured with `auth-default-access: deny-all`. Nothing is
+publish-able or subscribe-able without credentials.
 
-| Threat | Protected against today? |
+**Three classes of credentials live in the system:**
+
+| User | Role | Access | Where the credential lives |
+|---|---|---|---|
+| `admin` | admin | full | `/etc/mypa/env` as `NTFY_ADMIN_PASSWORD`; used only by operator scripts |
+| `mypa-publisher` | regular | write-only on `u-*` | `/etc/mypa/env` as `NTFY_PUBLISH_PASSWORD`; used by mypa-api to send every push |
+| `u-<random16>` (one per MyPA user) | regular | read-only on their own topic | `users.notify_token` column, returned via authenticated `GET /me/notify-prefs` to the owning user |
+
+The MyPA application **never sees the publisher password being used
+for a user-facing API** — it lives in env, mypa-api uses it server-side
+when calling ntfy. The per-user `ntfy_password` is what the user puts in
+their mobile app and is never used to publish.
+
+| Threat | Protected against |
 |---|---|
-| Passive Internet scanning for topic names (16 hex chars, ~2^64 keyspace) | ✓ practically yes |
-| Someone who learns your topic URL (logs, screenshot, accidental paste) | ✗ they can subscribe and see all your pushes in real time |
-| Someone who learns your topic URL spoofing notifications | ✗ they can publish fake "Pick up Kepei NOW" or "Confirm £5000 transfer" messages to your phone, indistinguishable from real MyPA pushes |
-| Topic rotation truly revoking the old topic | ✗ the old topic remains publish-and-subscribe-able on the ntfy server until the operator manually deletes it |
-| Notification content private from your push provider | ✗ Apple (APNs) and Google (FCM) see message bodies in transit — this is true of every iOS/Android push system, not specific to ntfy |
-| Operator with VPS root reading your last 12 hours of notifications | ✗ ntfy caches messages in `/var/cache/ntfy/cache.db` unencrypted |
+| Passive Internet scanning for topic names | ✓ (16-hex namespace + auth on top) |
+| Someone learns your topic URL but not your credentials | ✓ — subscribing returns 401 |
+| Someone spoofs notifications to your phone | ✓ — publish requires `mypa-publisher` credentials; anonymous POST is 403 |
+| Topic rotation truly revoking old credentials | ✓ — the old ntfy account is `ntfy user remove`'d server-side, 401 on next use |
+| Disabled user can no longer receive pushes | ✓ — `disable_user()` calls `ntfy user remove` |
+| Notification content private from Apple/Google | ✗ — APNs/FCM see message bodies (unavoidable on every iOS/Android push system) |
+| Operator with VPS root reading your last 12 hours of notifications | ✗ — ntfy caches messages in `/var/cache/ntfy/cache.db` unencrypted (mitigation: lower `cache-duration` to ~15m) |
 
-**Implications.** If you self-host MyPA for your family today, your
-notifications are private *as long as the subscribe URL doesn't leak*.
-This is fine for "remind me about my dentist appointment" or "today:
-3 todos." It is **not** fine if you'd be uncomfortable with anyone who
-ever sees that URL also seeing all your future notifications, or
-forging them.
+### iOS background-delivery tradeoff
 
-**Workarounds you can apply today** (operator-side):
-- Don't return `subscribe_url` from logs or non-authenticated endpoints
-  (mypa-api only returns it from authenticated `GET /me/notify-prefs`)
-- Keep `cache-duration` short — change `/etc/ntfy/server.yml` from 12h
-  to e.g. 15m if you don't need offline catch-up
-- Use lower-priority notifications without sensitive content (e.g.
-  "3 things due today" instead of "Pick up prescription at Boots
-  Pharmacy Kings Cross 14:00")
+Self-hosted ntfy maintains a persistent socket to the mobile app. iOS
+aggressively closes background sockets to save battery. Two delivery paths:
 
-### Queued hardening (next focused work)
+1. **Direct mode (default in our setup):** notification arrives via the
+   open socket when the app is in foreground; iOS wakes the app via
+   APNs when in background. Sometimes results in delayed delivery on
+   iOS — typical lag is 15-60s when waking from deep background.
+2. **Upstream relay mode:** add `upstream-base-url: https://ntfy.sh` to
+   `/etc/ntfy/server.yml`. ntfy relays your notifications through
+   ntfy.sh's hosted infrastructure for reliable FCM/APNs delivery.
+   **Privacy tradeoff:** ntfy.sh metadata logs see message timestamps
+   and your topic name (but not the body, which is end-to-end-ish
+   between your server and the device). Most family installs accept
+   this tradeoff for reliable iOS pushes; privacy-strict operators
+   leave it off.
 
-The following is planned to land before MyPA is publicly distributed
-as a downloadable product:
-
-1. **`auth-default-access: deny-all`** in ntfy server config
-2. **Publisher token** — mypa-api authenticates publishes with a token
-   stored in `/etc/mypa/env` as `NTFY_PUBLISH_TOKEN`
-3. **Per-user subscribe tokens** — each user gets their own ntfy user
-   account at creation time; mobile app subscribes with that user's
-   credentials, not just a topic URL
-4. **`rotate_notify_topic` actually revokes** — calls `ntfy access remove`
-   on the old topic
-5. **`setup.sh` installs ntfy with auth pre-configured** so operators get
-   the secure model by default
-6. **Documented iOS background-delivery tradeoff** — self-hosted ntfy
-   without an upstream Firebase relay sometimes drops pushes when iOS
-   aggressively closes the background socket; the alternatives are
-   (a) configure ntfy with `upstream-base-url: https://ntfy.sh` to relay
-   through their FCM/APNs servers (privacy tradeoff), or (b) accept
-   occasional delivery delays
-
-When these land, this document will be updated to remove the "✗" rows
-above and the security model becomes "authenticated push, unguessable
-topics + bearer tokens" instead of "unguessable topics only."
-
-### What APNs / FCM see (relevant on every iOS/Android push system)
+### What APNs/FCM see (relevant on every iOS/Android push system)
 
 When an iPhone or Android device is asleep, ntfy can't push directly.
 It pushes through:
@@ -184,7 +202,7 @@ to the dashboard where the full context lives.
 ## Operator install (from scratch)
 
 For new MyPA deployments, install ntfy on the same VPS as mypa-api.
-This section will be folded into `setup.sh` in the next iteration.
+This section will be folded into `setup.sh` in a future iteration.
 
 ### 1. DNS
 
@@ -193,13 +211,12 @@ Add an A record `ntfy.<your-domain>` → your VPS IP.
 ### 2. Install ntfy
 
 ```bash
-# Download official .deb (replace 2.11.0 with the current release)
 ARCH=$(dpkg --print-architecture)
 curl -fsSL "https://github.com/binwiederhier/ntfy/releases/download/v2.11.0/ntfy_2.11.0_linux_${ARCH}.deb" -o /tmp/ntfy.deb
 sudo dpkg -i /tmp/ntfy.deb
 ```
 
-### 3. Configure
+### 3. Configure with auth
 
 Write `/etc/ntfy/server.yml`:
 
@@ -207,6 +224,11 @@ Write `/etc/ntfy/server.yml`:
 base-url: "https://ntfy.<your-domain>"
 listen-http: "127.0.0.1:9031"
 behind-proxy: true
+
+# Authentication — required.
+auth-file: "/var/lib/ntfy/auth.db"
+auth-default-access: "deny-all"
+
 cache-file: "/var/cache/ntfy/cache.db"
 cache-duration: "12h"
 attachment-cache-dir: "/var/cache/ntfy/attachments"
@@ -215,17 +237,28 @@ visitor-request-limit-burst: 60
 visitor-message-daily-limit: 500
 ```
 
-Create the cache dir and restart:
+Prepare directories and start:
 
 ```bash
-sudo install -d -m 0750 /var/cache/ntfy
+sudo install -d -o ntfy -g ntfy -m 0750 /var/cache/ntfy /var/lib/ntfy
 sudo systemctl restart ntfy
-sudo systemctl is-active ntfy   # → active
+sudo systemctl is-active ntfy
 ```
 
-### 4. Caddy
+### 4. Create admin + publisher ntfy users
 
-Add to `/etc/caddy/Caddyfile`:
+```bash
+ADMIN_PW=$(openssl rand -base64 30 | tr -d "\n=+/" | head -c 32)
+PUB_PW=$(openssl rand -base64 30 | tr -d "\n=+/" | head -c 32)
+
+NTFY_PASSWORD=$ADMIN_PW sudo -E ntfy user add --role=admin admin
+NTFY_PASSWORD=$PUB_PW sudo -E ntfy user add mypa-publisher
+sudo ntfy access mypa-publisher "u-*" write
+```
+
+Record both passwords in your password manager.
+
+### 5. Caddy
 
 ```
 ntfy.<your-domain> {
@@ -234,60 +267,64 @@ ntfy.<your-domain> {
 }
 ```
 
-Validate + reload:
-
 ```bash
 sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
-### 5. Wire MyPA
+### 6. Sudoers — allow mypa-api to manage per-user ntfy accounts
 
-Add to `/etc/mypa/env`:
+```bash
+sudo tee /etc/sudoers.d/mypa-ntfy >/dev/null <<'EOF'
+mypa ALL=(root) NOPASSWD: SETENV: /usr/bin/ntfy user add *, /usr/bin/ntfy user remove *, /usr/bin/ntfy user change-pass *, /usr/bin/ntfy access *, /usr/bin/ntfy token *
+EOF
+sudo chmod 0440 /etc/sudoers.d/mypa-ntfy
+sudo visudo -c -f /etc/sudoers.d/mypa-ntfy
+```
+
+`SETENV:` is required so `NTFY_PASSWORD` reaches the ntfy CLI through
+`sudo -E`. Without it `ntfy user add` receives an empty password.
+
+### 7. Wire MyPA env
+
+Append to `/etc/mypa/env`:
 
 ```
 NTFY_BASE_URL=https://ntfy.<your-domain>
+NTFY_ADMIN_USER=admin
+NTFY_ADMIN_PASSWORD=<ADMIN_PW from step 4>
+NTFY_PUBLISH_USER=mypa-publisher
+NTFY_PUBLISH_PASSWORD=<PUB_PW from step 4>
 ```
 
-Restart `mypa-api` to pick up the env change:
+Restart:
 
 ```bash
 sudo systemctl restart mypa-api
 ```
 
-### 6. Apply migration 005
-
-If you're upgrading an existing MyPA install (not running `setup.sh`
-from scratch):
+### 8. Apply migrations 005 + 006
 
 ```bash
 sudo -u mypa bash -c "set -a; source /etc/mypa/env; set +a; cd /opt/mypa; \
   PYTHONPATH=/opt/mypa /opt/mypa/.venv/bin/python scripts/apply_migrations.py"
 ```
 
-This adds `users.tz`, `users.notify_topic`, `users.notify_prefs`,
-`users.last_digest_at`.
+005 adds `users.tz`, `users.notify_topic`, `users.notify_prefs`,
+`users.last_digest_at`. 006 adds `users.notify_token`.
 
-### 7. Backfill existing users
+### 9. Backfill existing users
 
-New users created after migration 005 get a `notify_topic` automatically.
-For pre-existing users (created before 005), assign topics:
+For users created before this setup:
 
 ```bash
 sudo -u mypa bash -c "set -a; source /etc/mypa/env; set +a; cd /opt/mypa; \
-  PYTHONPATH=/opt/mypa /opt/mypa/.venv/bin/python -c '
-from mypa.db import session_factory
-from mypa import users as ul
-S = session_factory()
-with S() as db:
-    for u in ul.list_users(db):
-        s = ul.get_notify_settings(db, u.id)
-        if not s.get(\"topic\"):
-            new = ul.rotate_notify_topic(db, u.id)
-            print(f\"{u.email}: {new}\")
-'"
+  PYTHONPATH=/opt/mypa /opt/mypa/.venv/bin/python scripts/backfill_ntfy_accounts.py"
 ```
 
-### 8. Verify end-to-end
+This creates one ntfy account per existing MyPA user with read-only
+access to their own topic.
+
+### 10. Verify end-to-end
 
 ```bash
 # Log in as a user, get their subscribe URL

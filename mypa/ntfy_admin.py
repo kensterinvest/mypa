@@ -32,21 +32,23 @@ def _run(args: list[str], *, env_extra: dict[str, str] | None = None,
     Sudoers grants mypa user passwordless access to the relevant
     subcommands only.
     """
-    cmd = ["sudo", "-n", "ntfy", *args]
+    # -E preserves env vars (needed for NTFY_PASSWORD). Sudoers must
+    # include `SETENV:` for the mypa user → ntfy commands.
+    cmd = ["sudo", "-n", "-E", "ntfy", *args]
     env = os.environ.copy()
     if env_extra:
         env.update(env_extra)
     try:
         return subprocess.run(
             cmd, env=env, check=check,
-            capture_output=capture, text=True,
+            capture_output=True, text=True,   # always capture for error logging
             timeout=10,
         )
     except subprocess.CalledProcessError as e:
-        log.error("ntfy admin: %s failed (rc=%s) stderr=%s",
-                  " ".join(args), e.returncode, e.stderr)
+        msg = (e.stderr or e.stdout or "").strip()
+        log.error("ntfy admin: %s failed (rc=%s) %s", " ".join(args), e.returncode, msg)
         if check:
-            raise NtfyAdminError(f"ntfy {' '.join(args)} failed: {e.stderr}") from e
+            raise NtfyAdminError(f"ntfy {' '.join(args)} failed: {msg}") from e
         return e
     except FileNotFoundError as e:
         raise NtfyAdminError("ntfy CLI not on PATH") from e
