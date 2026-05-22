@@ -1,10 +1,15 @@
 /* ============================================================
- * MyPA demo — three scenes of Claude working with the archive.
+ * MyPA demo — three scenes showing breadth of personal-life data.
  * Real GSAP-driven DOM animation. No static-image trickery.
  *
- * Scene 1 — Save a decision (chat → tool call → index card files itself)
- * Scene 2 — Morning push lands (push toast slides in, card "glows")
- * Scene 3 — Recall the decision (chat search → card flies into reply)
+ * Scene 1 — Capture variety. Three rapid saves across kinds:
+ *           a place visited, a recurring family todo, a contract.
+ * Scene 2 — A morning digest push aggregating across kinds.
+ * Scene 3 — Cross-kind recall: "what about Kepei?" returns todo
+ *           + preference + decision + place together.
+ *
+ * All demo content is hardcoded literals — no user input flows
+ * into innerHTML, so no XSS surface.
  * ============================================================ */
 
 (function () {
@@ -89,135 +94,177 @@
   // -- Scenes ------------------------------------------------------------
 
   async function scene1() {
-    setScene(1, 'Save a decision');
+    setScene(1, 'Captured across a week');
     clearAll();
 
-    // 1.1 User types
-    const userMsg = addMsg('user', '');
-    await gsap.to(userMsg, { opacity: 1, y: 0, duration: 0.3 });
-    await typeInto(userMsg,
-      'Save: bought 100 shares of ABC at £2.10. I think it\'s undervalued — Q4 margins expanded, sector rotation hasn\'t caught up yet.',
-      { speed: 18 });
+    // 1.1 — a place you visited
+    const u1 = addMsg('user', '');
+    await gsap.to(u1, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u1, 'Pizza Express on King\'s Road last night — 5 stars, save that.', { speed: 18 });
 
-    await gsap.to({}, { duration: 0.6 });   // pause
+    const t1 = addMsg('tool',
+      'pa_add(\n  kind="place",\n  title="Pizza Express, King\'s Road",\n  data={"rating":5,"visited_at":"yesterday"}\n)');
+    await gsap.to(t1, { opacity: 1, y: 0, duration: 0.35 });
 
-    // 1.2 Claude acknowledges
-    const claudeAck = addMsg('claude', 'Saving as a decision — capturing your reasoning so you can come back to it later.');
-    await gsap.to(claudeAck, { opacity: 1, y: 0, duration: 0.4 });
+    const card1 = addIndexCard({
+      id: '#41', kind: 'place',
+      title: 'Pizza Express, King\'s Road',
+      when: 'Yesterday · London SW',
+      why: '★★★★★ · "burrata was a surprise"'
+    });
+    card1.style.borderLeftColor = '#3F4A3A';
+    await gsap.to(card1, { opacity: 1, y: 0, rotate: -1, duration: 0.55, ease: 'power2.out' });
+    await gsap.to({}, { duration: 0.55 });
 
+    // 1.2 — a recurring family todo
+    const u2 = addMsg('user', '');
+    await gsap.to(u2, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u2, 'Kepei has piano Thursdays at 4pm — remind me to pick her up.', { speed: 18 });
+
+    const t2 = addMsg('tool',
+      'pa_add(\n  kind="todo",\n  title="Pick up Kepei from piano",\n  data={"recurring":"Thu 16:00"}\n)\npa_add_reminder(item_id=42, fire_at="Thu 15:45")');
+    await gsap.to(t2, { opacity: 1, y: 0, duration: 0.35 });
+
+    const card2 = addIndexCard({
+      id: '#42', kind: 'todo',
+      title: 'Pick up Kepei from piano',
+      when: 'Recurring · Thursdays 16:00',
+      why: 'Reminder set · push 15 min before'
+    });
+    card2.style.borderLeftColor = '#7A2E1F';
+    await gsap.to(card2, { opacity: 1, y: 0, rotate: -0.5, duration: 0.55, ease: 'power2.out' });
+    await gsap.to({}, { duration: 0.55 });
+
+    // 1.3 — a durable contract / life-admin fact
+    const u3 = addMsg('user', '');
+    await gsap.to(u3, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u3, 'My IONOS VPS contract ends May 2027 — log it.', { speed: 18 });
+
+    const t3 = addMsg('tool',
+      'pa_add(\n  kind="contract",\n  title="IONOS VPS Linux XL+",\n  data={"end":"2027-05","monthly":12,"currency":"GBP"}\n)');
+    await gsap.to(t3, { opacity: 1, y: 0, duration: 0.35 });
+
+    const card3 = addIndexCard({
+      id: '#43', kind: 'contract',
+      title: 'IONOS VPS Linux XL+',
+      when: 'Ends May 2027 · 13 months out',
+      why: '£12/mo · will alert 30 days before renewal'
+    });
+    card3.style.borderLeftColor = '#8B8275';
+    await gsap.to(card3, { opacity: 1, y: 0, rotate: -1.2, duration: 0.55, ease: 'power2.out' });
     await gsap.to({}, { duration: 0.4 });
 
-    // 1.3 Tool call card
-    const toolCall = addMsg('tool',
-      'pa_add(\n' +
-      '  kind="decision",\n' +
-      '  title="Bought 100 ABC at £2.10",\n' +
-      '  data={"category":"investment","amount":210,"currency":"GBP"},\n' +
-      '  body="Q4 margins expanded, sector rotation lagging…"\n' +
-      ')');
-    await gsap.to(toolCall, { opacity: 1, y: 0, duration: 0.4 });
+    const close = addMsg('claude', 'All three saved. Your archive now spans places visited, family logistics, and durable life facts — all queryable in one search.');
+    await gsap.to(close, { opacity: 1, y: 0, duration: 0.4 });
 
-    await gsap.to({}, { duration: 0.5 });
-
-    // 1.4 Index card materialises in the store
-    const card = addIndexCard({
-      id: '#42',
-      kind: 'decision',
-      title: 'Bought 100 ABC at £2.10',
-      when: 'Today · 14:22 GMT',
-      why: '"Q4 margins expanded, sector rotation lagging…"'
-    });
-    await gsap.to(card, { opacity: 1, y: 0, rotate: -1, duration: 0.7, ease: 'power2.out' });
-
-    // 1.5 Claude closes the loop
-    const claudeDone = addMsg('claude', 'Saved as decision #42. I\'ve preserved the reasoning verbatim — append-only, so future-you can read past-you\'s thinking.');
-    await gsap.to(claudeDone, { opacity: 1, y: 0, duration: 0.4 });
-
-    await gsap.to({}, { duration: 2.5 });
+    await gsap.to({}, { duration: 2.6 });
   }
 
   async function scene2() {
-    setScene(2, 'A morning reminder');
+    setScene(2, 'A morning, gathered');
     clearAll();
 
-    // Bring back the card from scene 1 (slightly different time)
-    const card = addIndexCard({
-      id: '#42',
-      kind: 'decision',
-      title: 'Bought 100 ABC at £2.10',
-      when: 'Yesterday',
-      why: '"Q4 margins expanded, sector rotation lagging…"'
+    // Items already in the archive — today's relevant slice
+    const c1 = addIndexCard({
+      id: '#47', kind: 'event',
+      title: 'Dentist — Dr. Sharma',
+      when: 'Today · 10:30',
+      why: 'Allow 45 min · postcode SW1'
     });
-    gsap.set(card, { opacity: 1, y: 0, rotate: -1 });
+    c1.style.borderLeftColor = '#3F4A3A';
+    const c2 = addIndexCard({
+      id: '#42', kind: 'todo',
+      title: 'Pick up Kepei from piano',
+      when: 'Today · 16:00',
+      why: 'Reminder will fire at 15:45'
+    });
+    c2.style.borderLeftColor = '#7A2E1F';
+    const c3 = addIndexCard({
+      id: '#43', kind: 'contract',
+      title: 'IONOS VPS renews next month',
+      when: 'Heads-up · 30 days',
+      why: '£12/mo — review if XL+ tier still needed'
+    });
+    c3.style.borderLeftColor = '#8B8275';
+    gsap.set([c1, c2, c3], { opacity: 1, y: 0, rotate: -0.8 });
 
-    // System time-skip cue in chat
-    const systemMsg = addMsg('claude', '<em style="color:var(--graphite)">— next morning · 07:00 London —</em>');
-    await gsap.to(systemMsg, { opacity: 1, y: 0, duration: 0.4 });
-
+    const sysmsg = addMsg('claude', '<em style="color:var(--graphite)">— Friday morning · 07:00 London —</em>');
+    await gsap.to(sysmsg, { opacity: 1, y: 0, duration: 0.4 });
     await gsap.to({}, { duration: 0.5 });
 
-    // Push notification slides down from top
-    pushTitle.textContent = 'MyPA — Friday 22 May';
-    pushBody.textContent = '1 reminder due today · daily digest · 2 todos due';
+    pushTitle.textContent = 'MyPA — Friday';
+    // Push body has formatted hardcoded content — keep DOM-safe via textContent + spans
+    pushBody.textContent = '';
+    const b1 = document.createElement('strong'); b1.textContent = 'Today: '; pushBody.appendChild(b1);
+    pushBody.appendChild(document.createTextNode('dentist 10:30 · pick up Kepei 16:00'));
+    pushBody.appendChild(document.createElement('br'));
+    const b2 = document.createElement('strong'); b2.textContent = 'Heads-up: '; pushBody.appendChild(b2);
+    pushBody.appendChild(document.createTextNode('IONOS renews in 30 days'));
+
     await gsap.fromTo(pushEl,
       { opacity: 0, y: -40, scale: 0.92 },
       { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: 'power3.out' });
 
-    // Card glows oxblood briefly
-    await gsap.to(card, {
-      boxShadow: '0 0 0 2px var(--oxblood), 0 4px 14px rgba(28, 26, 23, 0.12)',
-      duration: 0.5
-    });
-    await gsap.to(card, {
-      boxShadow: '0 4px 14px rgba(28, 26, 23, 0.08)',
-      duration: 0.7
-    });
+    // Each relevant card glows briefly to show the cross-kind tie
+    await gsap.to(c1, { boxShadow: '0 0 0 2px var(--oxblood), 0 4px 14px rgba(28, 26, 23, 0.12)', duration: 0.35 });
+    await gsap.to(c1, { boxShadow: '0 4px 14px rgba(28, 26, 23, 0.08)', duration: 0.4 });
+    await gsap.to(c2, { boxShadow: '0 0 0 2px var(--oxblood), 0 4px 14px rgba(28, 26, 23, 0.12)', duration: 0.35 });
+    await gsap.to(c2, { boxShadow: '0 4px 14px rgba(28, 26, 23, 0.08)', duration: 0.4 });
+    await gsap.to(c3, { boxShadow: '0 0 0 2px var(--moss), 0 4px 14px rgba(28, 26, 23, 0.12)', duration: 0.35 });
+    await gsap.to(c3, { boxShadow: '0 4px 14px rgba(28, 26, 23, 0.08)', duration: 0.4 });
 
     await gsap.to({}, { duration: 1.5 });
-
-    // Push lingers, then slides up and out
     await gsap.to(pushEl, { opacity: 0, y: -30, scale: 0.95, duration: 0.4 });
-
     await gsap.to({}, { duration: 1.4 });
   }
 
   async function scene3() {
-    setScene(3, 'Recall, months later');
+    setScene(3, 'Recall, across kinds');
     clearAll();
 
-    // The card persists in the archive (was saved months ago)
-    const card = addIndexCard({
-      id: '#42',
-      kind: 'decision',
-      title: 'Bought 100 ABC at £2.10',
-      when: '4 months ago',
-      why: '"Q4 margins expanded, sector rotation lagging…"'
-    });
-    gsap.set(card, { opacity: 1, y: 0, rotate: -1 });
+    const user = addMsg('user', '');
+    await gsap.to(user, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(user, 'What have I saved about Kepei?', { speed: 22 });
+    await gsap.to({}, { duration: 0.4 });
 
-    // User asks Claude
-    const userMsg = addMsg('user', '');
-    await gsap.to(userMsg, { opacity: 1, y: 0, duration: 0.3 });
-    await typeInto(userMsg, 'Why did I buy ABC again? I want to check if my thesis still holds.', { speed: 22 });
+    const tool = addMsg('tool', 'pa_search(q="Kepei", limit=10)');
+    await gsap.to(tool, { opacity: 1, y: 0, duration: 0.4 });
+    await gsap.to({}, { duration: 0.4 });
 
-    await gsap.to({}, { duration: 0.5 });
+    const cardSpec = [
+      { id: '#42', kind: 'todo', title: 'Pick up Kepei from piano',
+        when: 'Recurring · Thursdays 16:00',
+        why: 'Last fired: yesterday · 15 min ahead push', accent: '#7A2E1F' },
+      { id: '#28', kind: 'preference', title: 'Kepei loves dinosaurs',
+        when: 'Saved 3 months ago',
+        why: 'context: birthday-gift ideas, museums, books', accent: '#3F4A3A' },
+      { id: '#15', kind: 'decision', title: 'Switched Kepei to morning piano slot',
+        when: '6 months ago',
+        why: '"afternoon clash with swim — Tuesday evening didn\'t stick"', accent: '#7A2E1F' },
+      { id: '#39', kind: 'place', title: 'Hummingbird Bakery — Kepei\'s favourite',
+        when: 'Visited 2 weeks ago',
+        why: '★★★★★ · "the cupcake made her day"', accent: '#3F4A3A' },
+    ];
+    const cards = [];
+    for (const spec of cardSpec) {
+      const c = addIndexCard(spec);
+      c.style.borderLeftColor = spec.accent;
+      cards.push(c);
+    }
+    for (const c of cards) {
+      await gsap.to(c, {
+        opacity: 1, y: 0,
+        rotate: gsap.utils.random(-1.5, 1.5),
+        duration: 0.4, ease: 'power2.out',
+      });
+    }
+    await gsap.to({}, { duration: 0.3 });
 
-    // Tool call — search
-    const toolCall = addMsg('tool', 'pa_search(q="ABC", limit=5)');
-    await gsap.to(toolCall, { opacity: 1, y: 0, duration: 0.4 });
-
-    await gsap.to({}, { duration: 0.5 });
-
-    // Card visually pulses (search hit)
-    await gsap.to(card, { scale: 1.04, duration: 0.25, ease: 'power2.out' });
-    await gsap.to(card, { scale: 1, duration: 0.35 });
-
-    // Claude streams back the recall
-    const claudeReply = addMsg('claude', '');
-    await gsap.to(claudeReply, { opacity: 1, y: 0, duration: 0.3 });
-    await typeInto(claudeReply,
-      'Found it — decision #42, recorded 4 months ago. Your reasoning at the time: "Q4 margins expanded, sector rotation lagging." Want me to check whether that thesis has played out?',
-      { speed: 18 });
+    const reply = addMsg('claude', '');
+    await gsap.to(reply, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(reply,
+      'Four items across four kinds — a recurring todo, a preference (useful for gifts), an old scheduling decision, and a place she loves. The whole context of one person, in one query.',
+      { speed: 16 });
 
     await gsap.to({}, { duration: 3 });
   }
