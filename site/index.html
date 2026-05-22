@@ -103,7 +103,7 @@
 
         <g class="hub-node" transform="translate(80 70)">
           <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
-          <circle r="3" fill="#A8E6B4" class="node-dot"/>
+          <circle r="3" fill="#FF6B5B" class="node-dot node-active"/>
           <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7">claude</text>
         </g>
         <g class="hub-node" transform="translate(300 80)">
@@ -113,8 +113,8 @@
         </g>
         <g class="hub-node" transform="translate(320 230)">
           <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
-          <circle r="3" fill="#FF6B5B" class="node-dot node-active"/>
-          <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7">ntfy</text>
+          <circle r="3" fill="#A8E6B4" class="node-dot"/>
+          <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7" opacity="0.65">ntfy · opt</text>
         </g>
         <g class="hub-node" transform="translate(300 390)">
           <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
@@ -618,6 +618,24 @@ sudo bash setup.sh</code></pre>
     architecture, reaching outside the chat to push a reminder, or
     being yours when the company gets acquired. Use both — they're
     different layers of the same need.</p>
+  </details>
+
+  <details>
+    <summary>When MyPA has updates, do I need to reconnect the Claude connector?</summary>
+    <p><strong>For data changes — no.</strong> Every Claude tool call hits the
+    live MyPA database in real time. Save an item now → ask Claude
+    about it in the next message → it's there. mypa-api restarts,
+    refresh-token rotation, and new users added on the server are all
+    transparent — Claude auto-reconnects on the next tool call.</p>
+    <p><strong>Reconnect IS needed only for:</strong></p>
+    <ul>
+      <li>New MCP tools added on the server side — Claude caches the tool list
+      per session, so either open a fresh chat or disconnect/reconnect the
+      connector to force a fresh tool fetch.</li>
+      <li>If the operator rotates <code>OAUTH_JWT_SECRET</code> — this
+      invalidates every JWT, so every connector must re-authorize.</li>
+      <li>If the connector URL changes (e.g. domain move).</li>
+    </ul>
   </details>
 
   <details>

@@ -20,10 +20,11 @@
     return;
   }
 
-  // Global pacing — slow every animation + pause by 30% so the demo
-  // reads at a comfortable scanning pace. Set timescale < 1 = slower.
-  gsap.globalTimeline.timeScale(0.77);
-  const TYPE_SCALE = 1.3;   // multiplier applied to typing-speed ms/char
+  // Global pacing — tuned for "comfortable scanning" pace. Lower
+  // timeScale = slower animations + pauses. TYPE_SCALE multiplies
+  // typing-speed ms/char.
+  gsap.globalTimeline.timeScale(0.92);   // was 0.77 — 7-scene loop felt long; slight tightening
+  const TYPE_SCALE = 1.15;               // was 1.30 — type a touch faster, still readable
 
   // -- DOM refs ----------------------------------------------------------
   const chatBody = document.getElementById('chat-body');
@@ -531,6 +532,17 @@
   playBtn?.addEventListener('click', () => { if (!isPlaying) runLoop(); });
   pauseBtn?.addEventListener('click', () => { stopLoop(); });
   restartBtn?.addEventListener('click', () => { stopLoop(); setTimeout(runLoop, 100); });
+
+  // Allow click-to-skip on the scene label — jump forward (rough but useful)
+  const sceneLabelEl = document.getElementById('demo-scene-label');
+  if (sceneLabelEl) {
+    sceneLabelEl.style.cursor = 'pointer';
+    sceneLabelEl.title = 'click to skip ahead';
+    sceneLabelEl.addEventListener('click', () => {
+      stopLoop();
+      setTimeout(runLoop, 100);   // restart loop; loop is short enough that this is a reasonable "next"
+    });
+  }
 
   // -- Auto-start when demo enters viewport ------------------------------
 

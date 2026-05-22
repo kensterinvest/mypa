@@ -96,6 +96,30 @@ The mobile Claude.ai app **inherits all connectors** added on desktop
 (there's no "+ Add connector" UI on mobile by design). After Step 3
 above, your phone's Claude app will see MyPA automatically.
 
+## Q&A — when do I need to reconnect?
+
+**When MyPA has updates, do I need to reconnect the Claude connector
+to get the latest changes?**
+
+For most things: **no.** The Claude.ai connector talks to your live
+MyPA server via MCP. Every tool call (e.g. `pa_search`, `pa_add`,
+`pa_list`) hits the live database in real time. There is no cache
+between Claude and MyPA's data.
+
+| Situation | Reconnect needed? |
+|---|---|
+| You add / edit / delete items via Claude or the REST API | **No** — instant |
+| Your operator adds a new user | **No** |
+| `mypa-api` or `mypa-mcp` is restarted (after a deploy) | **No** — Claude auto-reconnects on the next tool call |
+| Refresh-token rotation (every ~1h) | **No** — transparent |
+| The operator deploys *new MCP tools* on the server (e.g. `pa_attach_image`) | **Maybe** — Claude caches the tool list per session. Open a fresh chat (or disconnect+reconnect the connector) to pick them up |
+| The operator rotates `OAUTH_JWT_SECRET` | **Yes** — every JWT is invalidated; every connector must re-authorize |
+| The MCP URL or auth model changes | **Yes** — re-add the custom connector |
+
+In practice, the only "I should reconnect" trigger you'll hit
+regularly is: new MCP tools were added since you first connected.
+Disconnect + re-add the connector forces a fresh tool fetch.
+
 ## Troubleshooting
 
 ### "Couldn't reach the MCP server"

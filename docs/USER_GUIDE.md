@@ -124,7 +124,22 @@ If you forget your password, the operator can reset it the same way.
 
 ---
 
-## 6. Troubleshooting
+## 6. Do I need to reconnect the Claude connector when things change?
+
+**Almost never.** Items you save show up in Claude's next response
+instantly — no reconnect needed. Same for any edits or deletes.
+
+The only time you'll need to reconnect:
+- Your operator added new MCP tools and you want to use them in this
+  conversation. Open a fresh chat, or disconnect/reconnect the
+  connector once.
+- Your operator rotated the JWT signing secret (rare). You'll get a
+  401 from the connector; re-authorize once.
+
+See [OAUTH_SETUP.md → Q&A](OAUTH_SETUP.md#qa--when-do-i-need-to-reconnect)
+for the full breakdown.
+
+## 7. Troubleshooting
 
 | Symptom | Try |
 |---|---|

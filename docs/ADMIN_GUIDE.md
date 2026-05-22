@@ -57,6 +57,31 @@ Claude.ai; MyPA never calls out).
 
 ---
 
+## Scripts cheat-sheet
+
+All operator scripts live in `/opt/mypa/scripts/` and are runnable via:
+
+```bash
+sudo -u mypa bash -c "set -a; source /etc/mypa/env; set +a; cd /opt/mypa; \
+  PYTHONPATH=/opt/mypa /opt/mypa/.venv/bin/python scripts/<SCRIPT>.py [args]"
+```
+
+| Script | Purpose | Idempotent? |
+|---|---|---|
+| `init_db.py` | Initialise an empty SQLCipher database. Used by `setup.sh` on first install. | yes (`CREATE TABLE IF NOT EXISTS`) |
+| `apply_migrations.py` | Apply pending SQL files from `migrations/*.sql` in order. Records applied filenames in `schema_versions`. Re-runs skip already-applied. | yes |
+| `add_user.py <email> [--name X] [--admin] [--password X]` | Create a new user. Auto-generates a 16-char password if not provided. Prints the password ONCE — save it. | no (errors on duplicate email) |
+| `change_password.py <email> [--self]` | Reset a user's password. Operator mode (default): no current-pw check. Self-service mode (`--self`): prompts for current. Existing JWTs keep working until expiry — rotate `OAUTH_JWT_SECRET` for immediate revoke. | yes |
+| `backfill_admin_user.py` | One-shot: assign all pre-migration items (created before `003_users.sql`) to the admin user (lowest is_admin=1). | yes (skips already-assigned) |
+| `backfill_ntfy_accounts.py` | One-shot: for every user with a `notify_topic` but no `notify_token`, create the ntfy account + grant read-only access + store password. Skips users that already have a token. | yes |
+| `oauth_register_client.py <name> <redirect_uri>` | Pre-register an OAuth client (skips DCR). Returns `client_id` + `client_secret`. Useful for trusted out-of-band integrations. | no |
+| `snapshot.py` | Force an immediate `VACUUM INTO` backup snapshot. (Nightly cron handles this automatically.) | yes |
+| `verify_snapshot.py <path-to-snapshot.db>` | Open a snapshot with the SQLCipher key and confirm row counts match the live DB. Sanity check for disaster-recovery rehearsals. | yes |
+
+The scripts that need a fresh ntfy account (`add_user.py`, `change_password.py` with rotate effect, etc.) shell out to `ntfy user add`/`access` via the narrow sudoers entry `/etc/sudoers.d/mypa-ntfy`. If ntfy management is disabled (env `NTFY_USER_MGMT_ENABLED=false`, or no ntfy server present), the ntfy calls become no-ops and the script still succeeds — your archive just won't push.
+
+---
+
 ## User management
 
 Every command below is run on the VPS as the `mypa` system user.
