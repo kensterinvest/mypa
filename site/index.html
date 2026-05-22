@@ -489,8 +489,40 @@
 <section id="setup" class="setup">
   <div class="section-head">
     <p class="kicker">Self-host it</p>
-    <h2>Four commands, forty-five minutes.</h2>
-    <p class="lede">Modest hardware, two DNS records, root SSH. MyPA installs everything else.</p>
+    <h2>Docker on your NAS, or one bash command on a VPS.</h2>
+    <p class="lede">Two install paths — pick the one that matches your hardware. Both run the same MyPA, both take well under an hour.</p>
+  </div>
+
+  <div class="install-paths">
+    <article class="install-path">
+      <h3>🐳 Docker (recommended for NAS &amp; home server)</h3>
+      <p>Synology, QNAP, Unraid, TrueNAS, Raspberry Pi, mini-PC, even a spare laptop. Anywhere Docker runs.</p>
+<pre><code>git clone https://github.com/kensterinvest/mypa.git
+cd mypa/docker
+cp .env.example .env
+# edit .env: hostnames + admin email + secrets
+docker compose up -d</code></pre>
+      <p class="install-pros">Brings up <strong>API + MCP + ntfy + Caddy with TLS</strong> as four containers, on an internal bridge network. Persistent named volumes. Updates: <code>git pull &amp;&amp; docker compose up -d --build</code>.</p>
+      <p><a class="link" href="https://github.com/kensterinvest/mypa/blob/main/docker/README.md" target="_blank" rel="noopener">Docker install guide →</a></p>
+    </article>
+
+    <article class="install-path">
+      <h3>🐧 Bare-metal Ubuntu (VPS path)</h3>
+      <p>For a dedicated Ubuntu 22.04 / 24.04 VPS at Hetzner, IONOS, DigitalOcean — anywhere you have root SSH.</p>
+<pre><code>git clone https://github.com/kensterinvest/mypa.git /opt/mypa
+cd /opt/mypa
+sudo bash setup.sh</code></pre>
+      <p class="install-pros">Installs everything system-wide: Python, SQLCipher, ntfy, Caddy, systemd units, Let's Encrypt certificates. Interactive prompts for your hostnames + admin email.</p>
+      <p><a class="link" href="https://github.com/kensterinvest/mypa" target="_blank" rel="noopener">Source on GitHub →</a></p>
+    </article>
+  </div>
+</section>
+
+<!-- ==================== SPECS &amp; STEPS (legacy section) ==================== -->
+<section class="setup-detail">
+  <div class="section-head">
+    <p class="kicker">Hardware &amp; DNS</p>
+    <h2>Modest hardware, two DNS records.</h2>
   </div>
 
   <div class="specs-panel">
@@ -664,9 +696,26 @@ sudo bash setup.sh</code></pre>
 
   <details>
     <summary>What does it cost to run?</summary>
-    <p>£0 software + ~£8-15/mo VPS. No per-user fees. A 5-person family
-    install costs the same as a 1-person install. No API calls to Anthropic
-    are made by MyPA itself (Claude calls Anthropic; MyPA just holds the data).</p>
+    <p>£0 software + the cost of a place to run it. If you already have
+    a NAS or a home server, that's free. Otherwise: a £4-15/mo VPS works.
+    No per-user fees — a 5-person family install costs the same as a
+    1-person install. No API calls to Anthropic are made by MyPA itself
+    (Claude calls Anthropic; MyPA just holds the data).</p>
+  </details>
+
+  <details>
+    <summary>Can I install it on my Synology / QNAP / Unraid?</summary>
+    <p><strong>Yes.</strong> The Docker compose stack runs on any Docker
+    host — Synology Container Manager, QNAP Container Station, Unraid
+    Community Apps, TrueNAS Scale. Same single-file <code>.env</code> to
+    configure. Walkthrough: <a href="https://github.com/kensterinvest/mypa/blob/main/docker/README.md" target="_blank" rel="noopener">docker/README.md</a>.</p>
+  </details>
+
+  <details>
+    <summary>What about a Raspberry Pi?</summary>
+    <p>Pi 4 (2 GB+) or Pi 5 runs MyPA comfortably. Use the Docker path or
+    the bare-metal <code>setup.sh</code> on Raspberry Pi OS / Ubuntu Server
+    arm64. For public access without a static IP: <a href="https://www.cloudflare.com/products/tunnel/" target="_blank" rel="noopener">Cloudflare Tunnel</a> or a dynamic-DNS provider does the job.</p>
   </details>
 
   <details>
@@ -711,21 +760,20 @@ sudo bash setup.sh</code></pre>
     <div class="audience-yes">
       <h3>You'll like this if…</h3>
       <ul>
-        <li>You already keep notes / a journal / a personal wiki, and wish your AI could read them.</li>
-        <li>You run things on a VPS (Hetzner, IONOS, Linode, DigitalOcean…) or are comfortable doing so.</li>
-        <li>You'd rather pay a tenner a month for infra you own than a per-seat subscription you don't.</li>
+        <li>You already have a NAS (Synology, QNAP, Unraid, TrueNAS) or a Raspberry Pi / mini-PC running 24/7 — <strong>Docker install does the rest.</strong></li>
+        <li>You have a £5/mo VPS or are comfortable getting one (Hetzner, IONOS, DigitalOcean…) — the bash installer is one command.</li>
+        <li>You'd rather pay £4-15/mo for infra you own than per-seat subscriptions you don't.</li>
+        <li>You have a family or small team who'd each benefit from their own AI memory on one install.</li>
         <li>You think "vendor lock-in" sounds like something to avoid.</li>
-        <li>You have a family or small team who'd each benefit from their own AI memory.</li>
-        <li>The phrase "MCP server" doesn't make you flinch.</li>
+        <li>You can follow a setup README. (You don't need to know what an MCP server <em>is</em> — just that one runs on your box.)</li>
       </ul>
     </div>
     <div class="audience-no">
       <h3>Skip this if…</h3>
       <ul>
-        <li>You want something that "just works" with zero infra to maintain — Claude's hosted memory is for you.</li>
-        <li>You're not comfortable on the Linux command line and don't want to learn.</li>
+        <li>You don't have a box that's on 24/7 and don't want one — Claude's hosted memory is for you.</li>
         <li>You handle regulated data (PHI, financial-services records at scale) — talk to a compliance specialist instead.</li>
-        <li>Your AI usage is occasional. The setup cost only pays back if you actually rely on it.</li>
+        <li>Your AI usage is occasional. The setup cost pays back through years of use, not weeks.</li>
         <li>You want an iOS app on the App Store, polished onboarding, a 24/7 support line. MyPA is software you self-host, not a product you buy.</li>
       </ul>
     </div>

@@ -10,6 +10,21 @@ For end-user onboarding, send them [USER_GUIDE.md](USER_GUIDE.md).
 
 ---
 
+## Install paths
+
+Two ways to install MyPA — they produce equivalent stacks:
+
+| Path | Best for | Time |
+|---|---|---|
+| **Docker** ([`docker/README.md`](../docker/README.md)) | NAS (Synology, QNAP, Unraid, TrueNAS), Raspberry Pi, home servers, anywhere Docker runs | ~15-20 min after DNS |
+| **`setup.sh`** (this guide) | Dedicated Ubuntu VPS, anywhere you want a system-wide install with systemd | ~30-45 min after DNS |
+
+Both produce: API + MCP + ntfy + Caddy with TLS, on the same hostnames,
+with the same data model. You can switch later by exporting your DB and
+re-pointing DNS.
+
+---
+
 ## Server requirements
 
 **Minimum (one user, no photo attachments):**
