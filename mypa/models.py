@@ -88,3 +88,39 @@ class Reminder(Base):
         Index("idx_reminders_due", "fire_at"),
         Index("idx_reminders_user", "user_id"),
     )
+
+
+class Attachment(Base):
+    """A file uploaded by a user — image now, audio/PDF in later phases.
+
+    Content-addressed on disk under BLOB_DIR/YYYY/MM/<sha256>.<ext>; this
+    row is the index. item_id is nullable so the upload-then-link flow
+    works. (user_id, sha256) unique so the same bytes uploaded twice by
+    the same user dedup, but different users still get separate rows.
+    """
+
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # users table is created by 003_users.sql (not ORM-managed) — leave FK
+    # constraint to the SQL migration; declare just the column here so
+    # Base.metadata.create_all works in unit tests without that migration.
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("items.id", ondelete="SET NULL"), index=True
+    )
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    mime: Mapped[str] = mapped_column(String(128), nullable=False)
+    bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    path: Mapped[str] = mapped_column(String(255), nullable=False)
+    alt_text: Mapped[str | None] = mapped_column(Text)
+    exif_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "sha256", name="uq_attachments_user_sha"),
+        Index("idx_attachments_item", "item_id"),
+        Index("idx_attachments_user", "user_id"),
+    )

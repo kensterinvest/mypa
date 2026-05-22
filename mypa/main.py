@@ -96,6 +96,7 @@ async def ready() -> dict:
 
 
 # Routers
+from .routes import attachments as attachments_routes  # noqa: E402
 from .routes import auth_routes  # noqa: E402
 from .routes import items as items_routes  # noqa: E402
 from .routes import oauth as oauth_routes  # noqa: E402
@@ -105,6 +106,7 @@ from .routes import search as search_routes  # noqa: E402
 app.include_router(items_routes.router)
 app.include_router(reminders_routes.router)
 app.include_router(search_routes.router)
+app.include_router(attachments_routes.router)
 # OAuth router has paths at /.well-known/* and /oauth/* — mounted at root.
 app.include_router(oauth_routes.router)
 # Dashboard auth (email + password → JWT) at /auth/*

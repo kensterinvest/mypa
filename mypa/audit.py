@@ -14,14 +14,25 @@ from pathlib import Path
 from .settings import settings
 
 
-# Tracked per-request: set by middleware, read by audit().
+# Tracked per-request: set by middleware, read by audit() + MCP tools.
 _remote_ip: ContextVar[str] = ContextVar("remote_ip", default="?")
 _token_scope: ContextVar[str] = ContextVar("token_scope", default="?")
+_user_id: ContextVar[int | None] = ContextVar("user_id", default=None)
 
 
-def set_request_context(ip: str, scope: str) -> None:
+def set_request_context(ip: str, scope: str, user_id: int | None = None) -> None:
     _remote_ip.set(ip or "?")
     _token_scope.set(scope or "?")
+    _user_id.set(user_id)
+
+
+def current_user_id() -> int | None:
+    """Read the per-request user_id set by middleware. MCP tools use this
+    to scope every service call to the calling user, defending against
+    cross-tenant access on the MCP surface (parallel to REST's
+    request.state.user_id pattern).
+    """
+    return _user_id.get()
 
 
 def audit(tool: str, args: dict, result_summary: str = "ok", exit_code: int = 0) -> None:
@@ -37,6 +48,7 @@ def audit(tool: str, args: dict, result_summary: str = "ok", exit_code: int = 0)
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "ip": _remote_ip.get(),
         "scope": _token_scope.get(),
+        "user_id": _user_id.get(),
         "tool": tool,
         "args": _redact(args),
         "result": (result_summary or "")[:200],

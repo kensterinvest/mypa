@@ -17,8 +17,9 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from . import __version__
-from .audit import audit, set_request_context
-from .auth import classify_token, TokenScope
+from . import attachments as att_lib
+from .audit import audit, current_user_id, set_request_context
+from .auth import _user_id_from_token, classify_token, TokenScope
 from .db import session_factory
 from .schemas import ItemCreate, ItemPatch
 from . import service
@@ -133,7 +134,7 @@ def pa_add(
         context=context,
     )
     with Session() as db:
-        item = service.create_item(db, payload)
+        item = service.create_item(db, payload, user_id=current_user_id())
         result = _serialize(item)
     audit("pa_add", {"kind": kind, "title": title}, f"id={result['id']}")
     return result
@@ -144,7 +145,7 @@ def pa_get(item_id: int) -> dict:
     """Fetch a single item by id. Returns full record including body and data{}."""
     Session = session_factory()
     with Session() as db:
-        item = service.get_item(db, item_id)
+        item = service.get_item(db, item_id, user_id=current_user_id())
         if item is None:
             audit("pa_get", {"item_id": item_id}, "not found", 1)
             return {"error": "not found", "item_id": item_id}
@@ -175,6 +176,7 @@ def pa_list(
             due_before=datetime.fromisoformat(due_before) if due_before else None,
             tag=tag,
             limit=limit,
+            user_id=current_user_id(),
         )
         result = [_serialize(i) for i in items]
     audit(
@@ -196,7 +198,7 @@ def pa_search(q: str, limit: int = 10) -> dict:
     """
     Session = session_factory()
     with Session() as db:
-        items = service.search_items(db, q, limit=limit)
+        items = service.search_items(db, q, limit=limit, user_id=current_user_id())
         result = [_serialize(i) for i in items]
     audit("pa_search", {"q": q, "limit": limit}, f"{len(result)} hits")
     return {"query": q, "count": len(result), "items": result}
@@ -227,7 +229,7 @@ def pa_undo_last(source: str | None = None) -> dict:
     """
     Session = session_factory()
     with Session() as db:
-        item = service.undo_last(db, source=source)
+        item = service.undo_last(db, source=source, user_id=current_user_id())
     if item is None:
         audit("pa_undo_last", {"source": source}, "nothing to undo", 1)
         return {"error": "nothing to undo"}
@@ -253,13 +255,14 @@ def pa_delete(item_id: int, confirm: bool = False) -> dict:
         }
     Session = session_factory()
     with Session() as db:
-        item = service.get_item(db, item_id)
+        uid = current_user_id()
+        item = service.get_item(db, item_id, user_id=uid)
         if item is None:
             audit("pa_delete", {"item_id": item_id}, "not found", 1)
             return {"error": "not found", "item_id": item_id}
         title = item.title
         kind = item.kind
-        service.delete_item(db, item_id)
+        service.delete_item(db, item_id, user_id=uid)
     audit("pa_delete", {"item_id": item_id, "confirm": True}, f"deleted {kind!r} {title!r}")
     return {"deleted_id": item_id, "title": title, "kind": kind}
 
@@ -302,7 +305,7 @@ def pa_update(
     Session = session_factory()
     try:
         with Session() as db:
-            item = service.update_item(db, item_id, patch)
+            item = service.update_item(db, item_id, patch, user_id=current_user_id())
     except ValueError as e:
         audit("pa_update", {"item_id": item_id}, f"rejected: {e}", 1)
         return {"error": str(e)}
@@ -322,7 +325,7 @@ def pa_complete(item_id: int) -> dict:
     """
     Session = session_factory()
     with Session() as db:
-        item = service.complete_item(db, item_id)
+        item = service.complete_item(db, item_id, user_id=current_user_id())
     if item is None:
         audit("pa_complete", {"item_id": item_id}, "not found", 1)
         return {"error": "not found", "item_id": item_id}
@@ -347,6 +350,7 @@ def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> d
             fire_at=datetime.fromisoformat(fire_at),
             message=message,
             channel="telegram",
+            user_id=current_user_id(),
         )
     if r is None:
         audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, "item not found", 1)
@@ -359,6 +363,117 @@ def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> d
         "message": r.message,
         "channel": r.channel,
         "note": "Reminder stored. Telegram delivery worker not yet active — will fire once Phase 2 ships.",
+    }
+
+
+# -----------------------------------------------------------------------------
+# Phase 3 — attachments (image/audio/pdf)
+# -----------------------------------------------------------------------------
+
+@mcp.tool()
+def pa_attach_image(
+    item_id: int,
+    image_b64: str,
+    mime_type: str = "image/jpeg",
+    alt_text: str | None = None,
+) -> dict:
+    """Attach a base64-encoded image to an existing MyPA item.
+
+    Use when the user shares a photo and you've already parsed its
+    contents into a structured item via pa_add. Pass the image bytes
+    here to keep the original alongside the structured fields — useful
+    for receipts, business cards, whiteboard photos, anything where
+    going back to the original later might matter.
+
+    Workflow:
+      1. User shares a photo of a business card.
+      2. You (Claude) view it via your native vision and extract
+         name, phone, email, company.
+      3. Call pa_add(kind='person', title='John Smith', data={...}).
+      4. Call pa_attach_image(item_id=<id from pa_add>, image_b64=...,
+         mime_type='image/jpeg', alt_text='Business card scan').
+
+    `image_b64` is the standard base64-encoded image bytes.
+    `mime_type` must be one of: image/jpeg, image/png, image/gif,
+    image/webp, image/heic, application/pdf.
+    `alt_text` is a short human description (for accessibility +
+    later search; will be added to the item's body if not provided).
+    """
+    import base64
+    uid = current_user_id()
+    if uid is None:
+        return {"error": "no user context"}
+    try:
+        data = base64.b64decode(image_b64)
+    except Exception as e:
+        audit("pa_attach_image", {"item_id": item_id, "mime_type": mime_type}, f"b64 decode failed: {e}", 1)
+        return {"error": f"invalid base64: {e}"}
+
+    Session = session_factory()
+    try:
+        with Session() as db:
+            att = att_lib.create_attachment(
+                db,
+                user_id=uid,
+                data=data,
+                mime=mime_type,
+                item_id=item_id,
+                alt_text=alt_text,
+            )
+    except ValueError as e:
+        audit("pa_attach_image", {"item_id": item_id, "mime_type": mime_type}, f"rejected: {e}", 1)
+        return {"error": str(e)}
+    except PermissionError as e:
+        audit("pa_attach_image", {"item_id": item_id, "mime_type": mime_type}, f"forbidden: {e}", 1)
+        return {"error": "item does not belong to you"}
+
+    audit("pa_attach_image", {"item_id": item_id, "mime_type": mime_type, "bytes": len(data)},
+          f"attachment id={att.id}")
+    return {
+        "attachment_id": att.id,
+        "item_id": att.item_id,
+        "sha256": att.sha256,
+        "bytes": att.bytes,
+        "mime": att.mime,
+    }
+
+
+@mcp.tool()
+def pa_extract_from_image(
+    image_b64: str,
+    mime_type: str = "image/jpeg",
+    hint: str | None = None,
+) -> dict:
+    """Server-side vision extraction. Calls Anthropic Claude vision to
+    propose a structured MyPA item draft from an image. DOES NOT SAVE —
+    returns a draft for the caller to review and then optionally pa_add.
+
+    OPT-IN: requires the operator to set IMAGE_EXTRACTION_ENABLED=true
+    in /etc/mypa/env. Default is false (privacy). If disabled, returns
+    an error explaining how to enable.
+
+    This tool exists mainly for non-Claude callers (cron jobs, scripts,
+    dashboard upload widgets). If you're Claude.ai with native vision,
+    you can extract directly and call pa_add yourself — that's cheaper.
+
+    Pass `hint` to bias extraction toward a specific kind: e.g.
+    hint='business card' nudges toward kind='person'.
+    """
+    s = settings()
+    if not s.image_extraction_enabled:
+        return {
+            "error": "image extraction disabled",
+            "detail": "Set IMAGE_EXTRACTION_ENABLED=true in /etc/mypa/env and restart mypa-mcp.",
+        }
+    if not s.anthropic_api_key:
+        return {"error": "ANTHROPIC_API_KEY not configured"}
+
+    # Implementation deferred to a follow-up — the wiring above gates
+    # the feature; the actual vision call lives in a separate module
+    # so it can be unit-tested without hitting the API.
+    return {
+        "error": "not implemented yet",
+        "detail": "pa_extract_from_image is stubbed. Use Claude's native vision + pa_add for now.",
     }
 
 
@@ -389,15 +504,19 @@ app = FastAPI(title="MyPA-MCP", version=__version__, lifespan=lifespan)
 async def auth_middleware(request: Request, call_next):
     if request.url.path == "/health":
         return await call_next(request)
-    scope = classify_token(request.headers.get("authorization", ""))
+    auth_header = request.headers.get("authorization", "")
+    scope = classify_token(auth_header)
     if scope is None:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
-    # MCP supports both RW and RO scopes; service-level checks restrict writes
+    # Resolve the calling user_id so MCP tools scope every query to them.
+    # Without this, the MCP surface is effectively a superuser — any
+    # connected user could see everyone else's items.
+    user_id = _user_id_from_token(auth_header)
     client_ip = (
         request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         or (request.client.host if request.client else "?")
     )
-    set_request_context(client_ip, scope.value)
+    set_request_context(client_ip, scope.value, user_id=user_id)
     return await call_next(request)
 
 
