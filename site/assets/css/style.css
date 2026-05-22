@@ -1,9 +1,9 @@
 /* ============================================================
  * MyPA — landing page styles
  *
- * Visual brief: trusted archivist. Warm paper, oxblood accent.
- * Editorial typography. No gradients. No glassmorphism. Hairline
- * rules. Serif headlines, sans body, mono for code.
+ * Visual brief: cyber-engineered, sovereign, tasteful. Slate base,
+ * steel-cyan accent, coral danger, mint badges. Geist display,
+ * Inter body, JetBrains Mono code. Mono eyebrows on every section.
  * ============================================================ */
 
 :root {
@@ -166,9 +166,61 @@ h3 { font-size: 1.4rem; font-weight: 500; letter-spacing: -0.01em; }
 .hero-meta span { color: var(--accent); font-weight: 500; }
 
 .hero-art { display: flex; justify-content: center; }
-.catalog-svg {
-  width: 100%; max-width: 360px; height: auto;
-  filter: drop-shadow(0 8px 24px rgba(28, 26, 23, 0.12));
+/* ---------- Cyber hero hub SVG ---------- */
+.cyber-hub-svg {
+  width: 100%; max-width: 440px; height: auto;
+  display: block;
+}
+
+.cyber-hub-svg .hub-halo {
+  transform-origin: 180px 230px;
+  animation: hubHalo 4.5s ease-in-out infinite;
+}
+@keyframes hubHalo {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 0.95; transform: scale(1.06); }
+}
+
+.cyber-hub-svg .hub-ring {
+  transform-origin: center;
+  animation: hubRing 3.2s ease-out infinite;
+}
+@keyframes hubRing {
+  0%   { transform: scale(1);    opacity: 0.6; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+
+.cyber-hub-svg .hub-pulse { animation: corePulse 2.8s ease-in-out infinite; }
+@keyframes corePulse {
+  0%, 100% { opacity: 1; r: 6; }
+  50%      { opacity: 0.55; r: 4.5; }
+}
+
+.cyber-hub-svg .node-dot { animation: nodeBlink 3.6s ease-in-out infinite; }
+.cyber-hub-svg .hub-node:nth-of-type(2) .node-dot { animation-delay: -0.6s; }
+.cyber-hub-svg .hub-node:nth-of-type(3) .node-dot { animation-delay: -1.2s; }
+.cyber-hub-svg .hub-node:nth-of-type(4) .node-dot { animation-delay: -1.8s; }
+.cyber-hub-svg .hub-node:nth-of-type(5) .node-dot { animation-delay: -2.4s; }
+.cyber-hub-svg .hub-node:nth-of-type(6) .node-dot { animation-delay: -3.0s; }
+@keyframes nodeBlink {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+.cyber-hub-svg .node-active { animation: nodeActive 2.2s ease-in-out infinite; }
+@keyframes nodeActive {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+
+.cyber-hub-svg .pulse { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cyber-hub-svg *,
+  .cyber-hub-svg *::before,
+  .cyber-hub-svg *::after { animation: none !important; }
+  .cyber-hub-svg .pulse { display: none; }
+  .cyber-hub-svg .hub-halo { opacity: 0.7; }
 }
 
 @media (max-width: 880px) {

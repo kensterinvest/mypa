@@ -56,45 +56,88 @@
       </ul>
     </div>
     <div class="hero-art" aria-hidden="true">
-      <!-- Manila card-catalog SVG. Real photo recommended (see IMAGERY.md) -->
-      <svg viewBox="0 0 360 460" xmlns="http://www.w3.org/2000/svg" class="catalog-svg">
+      <!-- Cyber connection-hub. MyPA at the centre, satellite nodes for
+           each integration (Claude, MCP, ntfy, Calendar, dashboard,
+           Telegram). Pulses travel inbound and outbound along the links. -->
+      <svg viewBox="0 0 360 460" class="cyber-hub-svg" role="img"
+           aria-label="MyPA connection graph: data flowing between Claude, MCP services, notifications, and calendar."
+           xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#8b6849"/><stop offset="1" stop-color="#5e4530"/>
-          </linearGradient>
+          <radialGradient id="hubGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#7CC4FF" stop-opacity="0.35"/>
+            <stop offset="60%" stop-color="#7CC4FF" stop-opacity="0.08"/>
+            <stop offset="100%" stop-color="#7CC4FF" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="pulseDot" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#A8E6B4" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#A8E6B4" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="pulseDotIn" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#7CC4FF" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#7CC4FF" stop-opacity="0"/>
+          </radialGradient>
         </defs>
-        <!-- cabinet body -->
-        <rect x="40" y="20" width="280" height="420" rx="6" fill="url(#wood)"/>
-        <rect x="40" y="20" width="280" height="420" rx="6" fill="none" stroke="#3a2a1c" stroke-width="2"/>
-        <!-- 6 drawers -->
-        <g>
-          <rect x="56" y="40" width="248" height="60" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
-          <rect x="56" y="110" width="248" height="60" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
-          <rect x="56" y="180" width="248" height="60" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
-          <!-- open drawer -->
-          <rect x="56" y="250" width="248" height="60" rx="4" fill="#e9dec9" stroke="#3a2a1c"/>
-          <rect x="56" y="320" width="248" height="60" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
-          <rect x="56" y="390" width="248" height="32" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
-          <!-- handles -->
-          <circle cx="180" cy="70" r="6" fill="#3a2a1c"/>
-          <circle cx="180" cy="140" r="6" fill="#3a2a1c"/>
-          <circle cx="180" cy="210" r="6" fill="#3a2a1c"/>
-          <circle cx="180" cy="280" r="6" fill="#3a2a1c"/>
-          <circle cx="180" cy="350" r="6" fill="#3a2a1c"/>
-          <!-- index card sticking out of drawer 4 -->
-          <g transform="translate(0,-30) rotate(-3, 180, 280)">
-            <rect x="100" y="240" width="160" height="40" rx="2" fill="#f4efe6" stroke="#3a2a1c"/>
-            <line x1="115" y1="252" x2="245" y2="252" stroke="#7a2e1f" stroke-width="0.5"/>
-            <line x1="115" y1="262" x2="230" y2="262" stroke="#1c1a17" stroke-width="0.4" opacity="0.6"/>
-            <line x1="115" y1="270" x2="215" y2="270" stroke="#1c1a17" stroke-width="0.4" opacity="0.6"/>
-          </g>
-          <!-- drawer labels -->
-          <text x="68" y="76" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">A — C · decisions</text>
-          <text x="68" y="146" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">D — H · preferences</text>
-          <text x="68" y="216" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">I — N · contracts</text>
-          <text x="68" y="356" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">P — S · places</text>
-          <text x="68" y="412" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">T — Z · todos &amp; events</text>
+
+        <g class="hub-grid" stroke="#1F2733" stroke-width="0.5" opacity="0.6">
+          <path d="M0 115 H360 M0 230 H360 M0 345 H360"/>
+          <path d="M90 0 V460 M180 0 V460 M270 0 V460"/>
         </g>
+
+        <circle cx="180" cy="230" r="90" fill="url(#hubGlow)" class="hub-halo"/>
+
+        <g class="hub-links" fill="none" stroke="#7CC4FF" stroke-width="1" stroke-opacity="0.35" stroke-linecap="round">
+          <path id="link-claude" d="M180 230 L 80 70"/>
+          <path id="link-mcp"    d="M180 230 L 300 80"/>
+          <path id="link-ntfy"   d="M180 230 L 320 230"/>
+          <path id="link-cal"    d="M180 230 L 300 390"/>
+          <path id="link-dash"   d="M180 230 L 60 390"/>
+          <path id="link-tg"     d="M180 230 L 40 230"/>
+        </g>
+
+        <g class="hub-core" transform="translate(180 230)">
+          <circle r="34" fill="#11161D" stroke="#7CC4FF" stroke-width="1.25"/>
+          <circle r="34" fill="none" stroke="#7CC4FF" stroke-width="1" class="hub-ring"/>
+          <circle r="6" fill="#7CC4FF" class="hub-pulse"/>
+          <text y="22" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#8B96A7" letter-spacing="1.5">MYPA</text>
+        </g>
+
+        <g class="hub-node" transform="translate(80 70)">
+          <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
+          <circle r="3" fill="#A8E6B4" class="node-dot"/>
+          <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7">claude</text>
+        </g>
+        <g class="hub-node" transform="translate(300 80)">
+          <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
+          <circle r="3" fill="#7CC4FF" class="node-dot"/>
+          <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7">mcp</text>
+        </g>
+        <g class="hub-node" transform="translate(320 230)">
+          <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
+          <circle r="3" fill="#FF6B5B" class="node-dot node-active"/>
+          <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7">ntfy</text>
+        </g>
+        <g class="hub-node" transform="translate(300 390)">
+          <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
+          <circle r="3" fill="#A8E6B4" class="node-dot"/>
+          <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7">calendar</text>
+        </g>
+        <g class="hub-node" transform="translate(60 390)">
+          <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
+          <circle r="3" fill="#7CC4FF" class="node-dot"/>
+          <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7">dashboard</text>
+        </g>
+        <g class="hub-node" transform="translate(40 230)">
+          <circle r="18" fill="#11161D" stroke="#1F2733" stroke-width="1"/>
+          <circle r="3" fill="#A8E6B4" class="node-dot"/>
+          <text y="34" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#8B96A7">telegram</text>
+        </g>
+
+        <circle class="pulse pulse-out" data-path="#link-claude" r="3.5" fill="url(#pulseDot)"/>
+        <circle class="pulse pulse-out" data-path="#link-mcp"    r="3.5" fill="url(#pulseDot)"/>
+        <circle class="pulse pulse-in"  data-path="#link-ntfy"   r="3.5" fill="url(#pulseDotIn)"/>
+        <circle class="pulse pulse-out" data-path="#link-cal"    r="3.5" fill="url(#pulseDot)"/>
+        <circle class="pulse pulse-in"  data-path="#link-dash"   r="3.5" fill="url(#pulseDotIn)"/>
+        <circle class="pulse pulse-out" data-path="#link-tg"     r="3.5" fill="url(#pulseDot)"/>
       </svg>
     </div>
   </div>
@@ -728,6 +771,8 @@ sudo bash setup.sh</code></pre>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/MotionPathPlugin.min.js"></script>
 <script src="assets/js/demo.js"></script>
+<script src="assets/js/cyber-hub.js" defer></script>
 </body>
 </html>

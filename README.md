@@ -1,20 +1,21 @@
 <div align="center">
 
-<img src="site/assets/img/logo-mark.svg" width="84" alt="MyPA logo — a manila file-tab with an oxblood wax-seal monogram">
+<img src="site/assets/img/logo-mark.svg" width="84" alt="MyPA — the cyber [•] monogram on slate, in steel-cyan and coral">
 
-# MyPA — your personal archive, for AI
+# MyPA — My Personal Archive, for AI
 
 **The memory layer underneath your AI. Self-hosted, encrypted, owned by you.**
 
-[🌐 **Live site & demo** →](https://mypa.z-tidus.com/) &nbsp;·&nbsp;
+[🌐 **Live site &amp; demo** →](https://mypa.z-tidus.com/) &nbsp;·&nbsp;
 [📖 Quick start](#quick-start) &nbsp;·&nbsp;
 [🛡️ Security policy](SECURITY.md) &nbsp;·&nbsp;
 [📝 Changelog](CHANGELOG.md) &nbsp;·&nbsp;
 [⚙️ Admin guide](docs/ADMIN_GUIDE.md)
 
 [![CI](https://github.com/kensterinvest/mypa/actions/workflows/ci.yml/badge.svg)](https://github.com/kensterinvest/mypa/actions/workflows/ci.yml)
-![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Version: v1.0.0](https://img.shields.io/badge/version-v1.0.0-7A2E1F)
+[![License: MIT](https://img.shields.io/badge/license-MIT-7CC4FF)](LICENSE)
+![Version: v1.0.0](https://img.shields.io/badge/version-v1.0.0-FF6B5B)
+![Status: production](https://img.shields.io/badge/status-production-A8E6B4)
 
 </div>
 
