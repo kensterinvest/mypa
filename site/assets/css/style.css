@@ -372,6 +372,46 @@ a.btn { border-bottom: 0.5px solid var(--ink); }   /* override generic link bord
   color: var(--moss);
   white-space: pre-wrap;
 }
+.chat-msg.tool::before {
+  content: 'MyPA';
+  display: inline-block;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--moss);
+  background: rgba(63, 74, 58, 0.12);
+  padding: 0.1em 0.4em;
+  border-radius: 2px;
+  margin-bottom: 0.35rem;
+}
+/* tool calls to OTHER MCPs (e.g. hotels.com) — visually distinct */
+.chat-msg.tool-other {
+  background: var(--bg);
+  border: 0.5px dashed var(--hairline-strong);
+  border-left: 3px solid var(--oxblood);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--oxblood);
+  white-space: pre-wrap;
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 2px;
+  max-width: 92%;
+  line-height: 1.4;
+  opacity: 0; transform: translateY(8px);
+}
+.chat-msg.tool-other::before {
+  content: 'Hotels.com MCP';
+  display: inline-block;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--oxblood);
+  background: rgba(122, 46, 31, 0.10);
+  padding: 0.1em 0.4em;
+  border-radius: 2px;
+  margin-bottom: 0.35rem;
+}
 .chat-cursor {
   display: inline-block;
   width: 7px; height: 14px;

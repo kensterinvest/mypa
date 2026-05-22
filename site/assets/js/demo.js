@@ -93,7 +93,7 @@
   }
 
   function setScene(n, label) {
-    sceneLabel.textContent = `Scene ${n} of 5 — ${label}`;
+    sceneLabel.textContent = `Scene ${n} of 6 — ${label}`;
   }
 
   // -- Scenes ------------------------------------------------------------
@@ -326,8 +326,73 @@
     await gsap.to({}, { duration: 2.6 });
   }
 
+  async function sceneCrossMcp() {
+    setScene(5, 'When another MCP leaves a mark');
+    clearAll();
+
+    // 5.1 — User asks Claude to book a hotel via another MCP
+    const u1 = addMsg('user', '');
+    await gsap.to(u1, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u1, 'Book a hotel in Tokyo for 14–18 March — Shibuya area, under £200/night.', { speed: 18 });
+
+    const ack = addMsg('claude', 'Checking Hotels.com…');
+    await gsap.to(ack, { opacity: 1, y: 0, duration: 0.35 });
+
+    // hotels_com tool call — visually distinct from pa_* calls
+    const hcSearch = addMsg('tool-other',
+      'hotels_com.search(\n  location="Shibuya, Tokyo",\n  check_in="2027-03-14",\n  check_out="2027-03-18",\n  max_nightly=200, currency="GBP"\n)');
+    await gsap.to(hcSearch, { opacity: 1, y: 0, duration: 0.35 });
+
+    const hcBook = addMsg('tool-other',
+      'hotels_com.book(\n  property_id="HC-89421",\n  guest="Kenny", nights=4\n)\n→ booked · ref HC-89421');
+    await gsap.to(hcBook, { opacity: 1, y: 0, duration: 0.35 });
+
+    const claudeBooked = addMsg('claude', 'Booked — Trunk(Hotel) Yoyogi-Uehara, £178/night, ref HC-89421. I\'ll log it to MyPA so it\'s there next time you ask.');
+    await gsap.to(claudeBooked, { opacity: 1, y: 0, duration: 0.4 });
+
+    // 5.2 — MyPA captures the durable fact from the cross-MCP transaction
+    const paAdd = addMsg('tool',
+      'pa_add(\n  kind="trip",\n  title="Tokyo · Shibuya · Mar 2027",\n  data={\n    "hotel":"Trunk(Hotel) Yoyogi-Uehara",\n    "nights":4, "nightly":178, "currency":"GBP",\n    "booking_ref":"HC-89421", "source":"hotels.com"\n  }\n)');
+    await gsap.to(paAdd, { opacity: 1, y: 0, duration: 0.35 });
+
+    const card = addIndexCard({
+      id: '#84', kind: 'trip',
+      title: 'Tokyo · Shibuya · Mar 2027',
+      when: '14–18 March · 4 nights',
+      why: 'Trunk(Hotel) Yoyogi-Uehara · £178/night · booked via Hotels.com'
+    });
+    card.style.borderLeftColor = '#3F4A3A';
+    await gsap.to(card, { opacity: 1, y: 0, rotate: -1, duration: 0.55, ease: 'power2.out' });
+
+    await gsap.to({}, { duration: 1.4 });
+
+    // 5.3 — Time skip; user asks later
+    const sysmsg = addMsg('claude', '<em style="color:var(--graphite)">— 8 months later · planning next Tokyo trip —</em>');
+    await gsap.to(sysmsg, { opacity: 1, y: 0, duration: 0.4 });
+    await gsap.to({}, { duration: 0.5 });
+
+    const u2 = addMsg('user', '');
+    await gsap.to(u2, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u2, 'Where did I stay in Tokyo back in March?', { speed: 22 });
+
+    const paSearch = addMsg('tool', 'pa_search(q="Tokyo March", kind="trip")');
+    await gsap.to(paSearch, { opacity: 1, y: 0, duration: 0.35 });
+
+    // Card glows
+    await gsap.to(card, { boxShadow: '0 0 0 2px var(--oxblood), 0 4px 14px rgba(28, 26, 23, 0.12)', duration: 0.35 });
+    await gsap.to(card, { boxShadow: '0 4px 14px rgba(28, 26, 23, 0.08)', duration: 0.4 });
+
+    const reply = addMsg('claude', '');
+    await gsap.to(reply, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(reply,
+      'Trunk(Hotel) Yoyogi-Uehara in Shibuya — 4 nights, 14–18 March, £178/night, booked via Hotels.com (ref HC-89421). Want me to check availability for similar dates this year?',
+      { speed: 16 });
+
+    await gsap.to({}, { duration: 2.6 });
+  }
+
   async function scene3() {
-    setScene(5, 'Recall, across kinds');
+    setScene(6, 'Recall, across kinds');
     clearAll();
 
     const user = addMsg('user', '');
@@ -396,6 +461,8 @@
         await scene2();
         if (ac.aborted) break;
         await sceneTravel();
+        if (ac.aborted) break;
+        await sceneCrossMcp();
         if (ac.aborted) break;
         await scene3();
       } catch (e) { /* swallow */ break; }
