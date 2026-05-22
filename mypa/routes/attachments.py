@@ -75,10 +75,18 @@ def get_attachment_file(
     if att is None:
         raise HTTPException(status_code=404, detail="not found")
     data = att_lib.read_attachment_bytes(att)
+    # Use Content-Disposition: attachment (NOT inline) — user-uploaded
+    # bytes served inline are an XSS class if a browser ever MIME-sniffs,
+    # or if ALLOWED_MIMES is later widened to include SVG/HTML. Forcing
+    # download eliminates the class. The dashboard fetches as a blob and
+    # renders client-side via createObjectURL, so this doesn't break it.
     return Response(
         content=data,
         media_type=att.mime,
-        headers={"Content-Disposition": f'inline; filename="{att.sha256[:12]}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{att.sha256[:12]}"',
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
