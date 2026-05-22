@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MyPA — your own personal librarian for AI</title>
-<meta name="description" content="MyPA is a self-hosted, encrypted personal knowledge base that lets Claude (or any MCP-compatible AI) remember your decisions, preferences, places, contracts, todos. Your data lives on your VPS, not in someone else's cloud.">
-<meta property="og:title" content="MyPA — your own personal librarian for AI">
-<meta property="og:description" content="Self-hosted personal AI memory. Open source. Encrypted. Family-ready.">
+<title>MyPA — My Personal Archive, for AI</title>
+<meta name="description" content="MyPA — My Personal Archive. A self-hosted, encrypted, structured personal knowledge base that lets Claude (or any MCP-compatible AI) read, reason over, and act on your durable life data. Your archive lives on your VPS, not in someone else's cloud.">
+<meta property="og:title" content="MyPA — My Personal Archive, for AI">
+<meta property="og:description" content="Self-hosted personal archive. Structured, encrypted, multi-user. Today Claude reads it; tomorrow whatever's next does too.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -356,6 +356,53 @@
   </blockquote>
 </section>
 
+<!-- ==================== COMPOUND ADVANTAGE ==================== -->
+<section id="unlocks" class="unlocks">
+  <div class="section-head">
+    <p class="kicker">The compound advantage</p>
+    <h2>What changes when AI can <em>reason over</em> your archive.</h2>
+    <p class="lede">Storage on its own is a Notes app. The interesting thing happens when an AI can read it, write to it, search it, push from it, and reason across years of your life — all through one open protocol.</p>
+  </div>
+
+  <div class="unlocks-grid">
+
+    <article class="unlock-card">
+      <div class="unlock-num">→</div>
+      <h3>Longitudinal reasoning</h3>
+      <p><em>"Look at my last 10 investment decisions — which ones with outcomes recorded actually played out? What's the pattern?"</em> Claude reads every <code>decision</code> with an outcome, compares your thesis to what happened, finds the common thread. Native AI memory can't compare freeform entries across years; structured records can.</p>
+      <p class="unlock-eg">→ <strong>Decision review</strong>, pattern detection, gift-buying retrospectives, "have I gotten better at this?"</p>
+    </article>
+
+    <article class="unlock-card">
+      <div class="unlock-num">→</div>
+      <h3>Proactive surfacing</h3>
+      <p>The scheduler runs while you sleep. Your AI can be told to <em>think</em>, not just remind: "any contracts renewing in 30 days I should review?", "places I rated 5★ but haven't been back to in a year?", "anyone I haven't logged a call with in 6 weeks?" Surface what you'd want to be told.</p>
+      <p class="unlock-eg">→ Contract renewals, relationship maintenance, "you're slipping on X" nudges, weekly retrospectives.</p>
+    </article>
+
+    <article class="unlock-card">
+      <div class="unlock-num">→</div>
+      <h3>Cross-AI orchestration</h3>
+      <p>MCP is open. One AI summarises your inbox into <code>note</code>s. Another reads your <code>preferences</code> and drafts gift ideas. A third pulls <code>decisions</code> + outcomes for end-of-quarter review. They share the same archive. Switch vendors any time without migrating data.</p>
+      <p class="unlock-eg">→ Email-to-archive pipelines, gift planners, calendar agents, journaling assistants — all on the same data.</p>
+    </article>
+
+    <article class="unlock-card">
+      <div class="unlock-num">→</div>
+      <h3>Hybrid agency</h3>
+      <p><em>"Plan my Tokyo trip — I have places saved there, dentist's on Friday, Kepei has piano Thursday."</em> Your AI reads the archive, drafts the itinerary, schedules the dependencies, writes the emails. Memory becomes the <strong>substrate</strong> for action, not just retrieval.</p>
+      <p class="unlock-eg">→ Trip planning, gift research, weekly schedule drafting, contract-renewal email drafts.</p>
+    </article>
+
+  </div>
+
+  <p class="unlocks-foot">
+    Native AI memory is a sticky note on your monitor. MyPA + an AI is a
+    private analyst who's read every page of your life so far — and can
+    write the next one alongside you.
+  </p>
+</section>
+
 <!-- ==================== AI INTEGRATION ==================== -->
 <section id="integrate" class="integrate">
   <div class="section-head">
@@ -381,9 +428,9 @@
 
     <article class="integrate-box">
       <div class="integrate-emoji">📱</div>
-      <h3>Push notifications (ntfy)</h3>
-      <p>Self-hosted ntfy server bundled with the install. Authenticated, per-user topics, true revocation. Mobile apps for iOS + Android — free, open-source.</p>
-      <code>ntfy.&lt;your-domain&gt;</code>
+      <h3>Push notifications (optional)</h3>
+      <p><strong>An add-on, not a requirement.</strong> If you want phone push for reminders + the morning digest, MyPA ships an integration with self-hosted <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a> — authenticated, per-user topics, free mobile apps. If you don't want notifications, skip this entirely; the archive + Claude integration works fine without it.</p>
+      <code>ntfy.&lt;your-domain&gt; · or skip</code>
     </article>
 
     <article class="integrate-box">
@@ -497,6 +544,20 @@ sudo bash setup.sh</code></pre>
     architecture, reaching outside the chat to push a reminder, or
     being yours when the company gets acquired. Use both — they're
     different layers of the same need.</p>
+  </details>
+
+  <details>
+    <summary>Why ntfy for push? Can't Claude just notify me?</summary>
+    <p>Claude.ai's mobile app shows notifications for new messages in
+    conversations you're already in — it doesn't have a "wake me at
+    14:00 with this reminder" API. MyPA's notification layer is a
+    separate concern: a self-hosted <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>
+    server we wire into the install, with mobile apps that work on iOS + Android.
+    It's <em>optional</em> — if you don't want phone push, skip the ntfy
+    step in setup; the archive itself, Claude integration, and the web
+    dashboard all work without it. We chose ntfy specifically because
+    it's open-source, self-hostable, and doesn't put a third-party
+    notification provider in the middle of your data.</p>
   </details>
 
   <details>

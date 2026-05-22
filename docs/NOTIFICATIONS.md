@@ -1,5 +1,42 @@
 # MyPA Notifications (ntfy)
 
+> **Notifications are an optional add-on.** MyPA is fundamentally an
+> archive — Claude (or any MCP-compatible AI) reads and writes your
+> data via the MCP server. The archive, the web dashboard, the REST
+> API, the OAuth integration, and Claude.ai's connector ALL work
+> without the notification layer. If you don't want phone push for
+> reminders and the morning digest, **skip the ntfy step in
+> `setup.sh`** and the rest of MyPA still runs fine.
+>
+> Read on if you do want push notifications.
+
+## Why ntfy and not Claude's own notifications?
+
+Claude.ai's mobile app surfaces notifications for new messages in
+conversations you're in — not for arbitrary "remind me at 14:00"
+events. There's no public Claude API for scheduled push. MyPA needs
+its own notification channel.
+
+We chose [ntfy](https://ntfy.sh) because:
+
+- It's open-source and self-hostable on the same VPS as MyPA
+- Free mobile apps for iOS + Android
+- Multi-user via topics with per-user authentication
+- No third-party notification provider in the middle of your data
+  (except the unavoidable APNs/FCM hop — same as every iOS/Android push)
+
+Alternatives you can plug in instead (operator's choice — requires code
+changes in `mypa/notifier.py`): Pushover, Pushbullet, Slack webhooks,
+Discord webhooks, email-via-SMTP, webhook-to-anything. The
+`notifier.publish()` interface is small.
+
+ntfy is the default because it satisfies the "self-hosted, no third
+party, multi-user" constraint that the rest of MyPA aims for.
+
+---
+
+## How the rest works (ntfy enabled)
+
 MyPA pushes reminders and daily digests to your phone via a self-hosted
 **[ntfy](https://ntfy.sh)** server. ntfy is a lightweight pub-sub service
 with native iOS and Android apps; we run our own instance so your

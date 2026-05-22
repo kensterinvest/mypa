@@ -88,7 +88,7 @@
   }
 
   function setScene(n, label) {
-    sceneLabel.textContent = `Scene ${n} of 3 — ${label}`;
+    sceneLabel.textContent = `Scene ${n} of 5 — ${label}`;
   }
 
   // -- Scenes ------------------------------------------------------------
@@ -160,8 +160,67 @@
     await gsap.to({}, { duration: 2.6 });
   }
 
+  async function sceneDecisionOutcome() {
+    setScene(2, 'A decision, revisited');
+    clearAll();
+
+    // Initial decision saved with reasoning
+    const u1 = addMsg('user', '');
+    await gsap.to(u1, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u1, 'Save: bought 100 shares of ABC at £2.10 — Q4 margins expanded, sector hasn\'t rotated yet.', { speed: 18 });
+
+    const t1 = addMsg('tool',
+      'pa_add(\n  kind="decision",\n  title="Bought 100 ABC at £2.10",\n  body="Q4 margins expanded, sector rotation lagging…",\n  data={"amount":210,"currency":"GBP","category":"investment"}\n)');
+    await gsap.to(t1, { opacity: 1, y: 0, duration: 0.35 });
+
+    const card = addIndexCard({
+      id: '#56', kind: 'decision',
+      title: 'Bought 100 ABC at £2.10',
+      when: 'Today · £210',
+      why: '"Q4 margins expanded, sector rotation lagging…"'
+    });
+    card.style.borderLeftColor = '#7A2E1F';
+    await gsap.to(card, { opacity: 1, y: 0, rotate: -0.8, duration: 0.55, ease: 'power2.out' });
+
+    await gsap.to({}, { duration: 1.2 });
+
+    // Time skip — months later, add the outcome
+    const sysmsg = addMsg('claude', '<em style="color:var(--graphite)">— 4 months later —</em>');
+    await gsap.to(sysmsg, { opacity: 1, y: 0, duration: 0.4 });
+    await gsap.to({}, { duration: 0.5 });
+
+    const u2 = addMsg('user', '');
+    await gsap.to(u2, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u2, 'ABC played out — sold at £2.85, 35% up. Append the outcome to that decision.', { speed: 18 });
+
+    const t2 = addMsg('tool',
+      'pa_update(\n  item_id=56,\n  body="…\\n\\n## Outcome 2026-09-22\\nSold at £2.85, +35%. Thesis on Q4 margins played out as expected."\n)');
+    await gsap.to(t2, { opacity: 1, y: 0, duration: 0.35 });
+
+    // Animate an "outcome" line appearing on the existing card
+    const outcomeLine = document.createElement('div');
+    outcomeLine.className = 'card-why';
+    outcomeLine.style.borderTop = '0.5px solid var(--hairline)';
+    outcomeLine.style.marginTop = '0.35rem';
+    outcomeLine.style.paddingTop = '0.45rem';
+    outcomeLine.style.color = '#3F4A3A';
+    outcomeLine.style.opacity = '0';
+    outcomeLine.textContent = '✓ Outcome (Sep 2026): sold at £2.85, +35%. Thesis held.';
+    card.appendChild(outcomeLine);
+    await gsap.to(outcomeLine, { opacity: 1, duration: 0.6 });
+
+    // Brief highlight
+    await gsap.to(card, { boxShadow: '0 0 0 2px var(--moss), 0 4px 14px rgba(28, 26, 23, 0.12)', duration: 0.35 });
+    await gsap.to(card, { boxShadow: '0 4px 14px rgba(28, 26, 23, 0.08)', duration: 0.4 });
+
+    const close = addMsg('claude', 'Outcome appended — your original reasoning stays intact, the result lives below it. Append-only means future-you can compare what-you-thought-then vs what-actually-happened.');
+    await gsap.to(close, { opacity: 1, y: 0, duration: 0.4 });
+
+    await gsap.to({}, { duration: 2.6 });
+  }
+
   async function scene2() {
-    setScene(2, 'A morning, gathered');
+    setScene(3, 'A morning, gathered');
     clearAll();
 
     // Items already in the archive — today's relevant slice
@@ -218,8 +277,52 @@
     await gsap.to({}, { duration: 1.4 });
   }
 
+  async function sceneTravel() {
+    setScene(4, 'Travel intelligence');
+    clearAll();
+
+    const u = addMsg('user', '');
+    await gsap.to(u, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u, 'I\'m in Tokyo next week — what places have I saved there?', { speed: 20 });
+    await gsap.to({}, { duration: 0.4 });
+
+    const tool = addMsg('tool', 'pa_list(\n  kind="place",\n  q="Tokyo",\n  limit=10\n)');
+    await gsap.to(tool, { opacity: 1, y: 0, duration: 0.4 });
+    await gsap.to({}, { duration: 0.4 });
+
+    const cardSpec = [
+      { id: '#67', kind: 'place', title: 'Aoyama Flower Market — Cha-no-ma',
+        when: 'Visited Mar 2023 · Tokyo · Aoyama',
+        why: '★★★★★ · "the rose-petal tea changed my mind about tea bars"' },
+      { id: '#71', kind: 'place', title: 'Butagumi Tonkatsu',
+        when: 'Visited Mar 2023 · Tokyo · Roppongi',
+        why: '★★★★☆ · "go early, queue forms by 18:00"' },
+      { id: '#74', kind: 'place', title: 'Cow Books — Shimokitazawa',
+        when: 'Visited Mar 2023 · Tokyo · Setagaya',
+        why: '★★★★★ · "small but the curation is perfect, half day disappeared"' },
+    ];
+    const cards = [];
+    for (const spec of cardSpec) {
+      const c = addIndexCard(spec);
+      c.style.borderLeftColor = '#3F4A3A';
+      cards.push(c);
+    }
+    for (const c of cards) {
+      await gsap.to(c, { opacity: 1, y: 0, rotate: gsap.utils.random(-1.2, 1.2), duration: 0.4, ease: 'power2.out' });
+    }
+    await gsap.to({}, { duration: 0.3 });
+
+    const reply = addMsg('claude', '');
+    await gsap.to(reply, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(reply,
+      'Three places from your last Tokyo trip — a tea house in Aoyama, a tonkatsu spot in Roppongi, and a bookshop in Shimokitazawa. Want me to add them to your itinerary?',
+      { speed: 16 });
+
+    await gsap.to({}, { duration: 2.6 });
+  }
+
   async function scene3() {
-    setScene(3, 'Recall, across kinds');
+    setScene(5, 'Recall, across kinds');
     clearAll();
 
     const user = addMsg('user', '');
@@ -283,7 +386,11 @@
       try {
         await scene1();
         if (ac.aborted) break;
+        await sceneDecisionOutcome();
+        if (ac.aborted) break;
         await scene2();
+        if (ac.aborted) break;
+        await sceneTravel();
         if (ac.aborted) break;
         await scene3();
       } catch (e) { /* swallow */ break; }
