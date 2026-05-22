@@ -68,6 +68,18 @@ class Settings(BaseSettings):
     audit_log_path: Path = Field(default=Path("/var/log/mypa-mcp.log"))
     blob_dir: Path = Field(default=Path("/var/lib/mypa/blobs"))
 
+    # --- Attachment limits (defence in depth on top of Caddy's body cap) ---
+    # Single-upload byte cap. Default 10 MB — high enough for a 12 MP phone
+    # photo or a multi-page PDF, low enough that an attacker can't OOM the
+    # API process. Caddy enforces the same cap at the proxy layer; this is
+    # the belt-and-braces check inside the app.
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024)
+    # Lifetime per-user cap — across all of a user's attachments combined.
+    # Default 1 GB. A compromised JWT can't fill the disk past this point.
+    max_user_bytes: int = Field(default=1024 * 1024 * 1024)
+    # Per-user upload rate. SlowAPI-formatted string.
+    attachment_rate_limit: str = Field(default="20/hour")
+
     # --- Notifications (ntfy) ---
     ntfy_base_url: str = Field(default="")           # e.g. "https://ntfy.z-tidus.com"
     notify_scheduler_enabled: bool = Field(default=True)

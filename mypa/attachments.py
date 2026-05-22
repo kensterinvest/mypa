@@ -16,7 +16,7 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .models import Attachment, Item
@@ -36,6 +36,125 @@ ALLOWED_MIMES = frozenset({
     "audio/wav",
     "audio/webm",
 })
+
+
+def _detect_mime_from_magic(data: bytes) -> str | None:
+    """Inspect the first bytes of `data` and return the MIME type implied
+    by the file's magic bytes, or None if unrecognised.
+
+    Defense against clients lying about Content-Type. We trust the bytes,
+    not the header. Only checks the MIMEs we accept in ALLOWED_MIMES —
+    everything else returns None and the caller rejects.
+
+    Signatures from the libmagic database and the various format specs.
+    """
+    if len(data) < 12:
+        return None
+
+    # JPEG: FF D8 FF (E0/E1/E8/etc.)
+    if data[:3] == b"\xFF\xD8\xFF":
+        return "image/jpeg"
+
+    # PNG: 89 50 4E 47 0D 0A 1A 0A
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+
+    # GIF: GIF87a or GIF89a
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+
+    # WebP: RIFF....WEBP  (4 bytes RIFF, 4 bytes size, 4 bytes WEBP)
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+
+    # WAV: RIFF....WAVE
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return "audio/wav"
+
+    # HEIC: bytes 4-8 are 'ftyp', and bytes 8-12 indicate the brand
+    # ('heic', 'heix', 'mif1', 'msf1', 'heim', 'heis', 'hevc', 'hevx', 'hevm', 'hevs')
+    if data[4:8] == b"ftyp" and data[8:12] in (
+        b"heic", b"heix", b"mif1", b"msf1",
+        b"heim", b"heis", b"hevc", b"hevx", b"hevm", b"hevs",
+    ):
+        return "image/heic"
+
+    # PDF: %PDF-
+    if data[:5] == b"%PDF-":
+        return "application/pdf"
+
+    # OGG: OggS
+    if data[:4] == b"OggS":
+        return "audio/ogg"
+
+    # MP3: 'ID3' tag at start, OR an MP3 frame sync (0xFF 0xFB/0xF3/0xF2)
+    if data[:3] == b"ID3":
+        return "audio/mpeg"
+    if data[0] == 0xFF and data[1] in (0xFB, 0xF3, 0xF2, 0xE3):
+        return "audio/mpeg"
+
+    # WebM / Matroska: 1A 45 DF A3
+    if data[:4] == b"\x1A\x45\xDF\xA3":
+        return "audio/webm"
+
+    return None
+
+
+def validate_upload(
+    data: bytes,
+    declared_mime: str,
+    *,
+    user_id: int,
+    db: Session,
+) -> str:
+    """Validate an incoming attachment body. Returns the *verified* MIME
+    type (which may differ from the declared one if the bytes say so —
+    we trust bytes over headers).
+
+    Raises:
+        ValueError — size cap exceeded, magic-byte mismatch, declared MIME
+                     not in ALLOWED_MIMES, or quota exceeded.
+
+    All checks are intentionally cheap and run BEFORE we touch disk.
+    """
+    s = settings()
+
+    # 1. Size cap. Caddy enforces this at the proxy too — this is the
+    #    application-layer belt-and-braces in case Caddy is misconfigured.
+    if len(data) > s.max_upload_bytes:
+        raise ValueError(
+            f"upload too large: {len(data)} bytes > limit {s.max_upload_bytes}"
+        )
+    if len(data) == 0:
+        raise ValueError("empty payload")
+
+    # 2. Declared MIME must be in the allow-list.
+    if declared_mime not in ALLOWED_MIMES:
+        raise ValueError(f"mime {declared_mime!r} not allowed")
+
+    # 3. Magic-byte detection: what the bytes actually look like.
+    detected = _detect_mime_from_magic(data)
+    if detected is None:
+        raise ValueError(
+            f"unrecognised file format — declared {declared_mime} but the bytes don't match any allowed signature"
+        )
+    if detected != declared_mime:
+        raise ValueError(
+            f"content-type mismatch: declared {declared_mime}, bytes look like {detected}"
+        )
+
+    # 4. Per-user quota. One additional SELECT — negligible cost. Defends
+    #    against a compromised JWT filling the disk.
+    used = db.execute(
+        select(func.coalesce(func.sum(Attachment.bytes), 0))
+        .where(Attachment.user_id == user_id)
+    ).scalar() or 0
+    if used + len(data) > s.max_user_bytes:
+        raise ValueError(
+            f"user quota exceeded: {used} bytes used + {len(data)} new > limit {s.max_user_bytes}"
+        )
+
+    return detected
 
 
 def _ext_for_mime(mime: str) -> str:
@@ -92,11 +211,14 @@ def create_attachment(
     item_id: int | None = None,
     alt_text: str | None = None,
 ) -> Attachment:
-    """Create an attachment row. Dedups within-user on sha256."""
-    if mime not in ALLOWED_MIMES:
-        raise ValueError(f"mime {mime!r} not allowed (see ALLOWED_MIMES)")
-    if len(data) == 0:
-        raise ValueError("empty payload")
+    """Create an attachment row. Dedups within-user on sha256.
+
+    Runs `validate_upload` first — size cap, magic-byte check, per-user
+    quota. The verified MIME (from magic bytes) replaces the declared
+    one if they match, so callers can pass the client-declared mime.
+    """
+    verified_mime = validate_upload(data, mime, user_id=user_id, db=db)
+    mime = verified_mime
 
     sha, full_path = store_blob(data, mime)
     rel_path = str(full_path.relative_to(_blob_dir()))

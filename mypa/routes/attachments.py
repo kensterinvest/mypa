@@ -6,13 +6,30 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from .. import attachments as att_lib
 from ..db import get_session
+from ..settings import settings
 
 
 router = APIRouter(tags=["attachments"])
+
+# Per-(user|IP) rate limiter on uploads. Tighter than the global 60/min
+# because each upload can be 10MB; we don't want a single user to be
+# able to churn 600 MB/min through the API.
+def _rate_key(request: Request) -> str:
+    """Key by user_id when authenticated, fall back to IP."""
+    uid = getattr(request.state, "user_id", None)
+    if uid is not None:
+        return f"user:{uid}"
+    fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return fwd or get_remote_address(request)
+
+
+_upload_limiter = Limiter(key_func=_rate_key)
 
 
 def _uid(request: Request) -> int:
@@ -23,7 +40,27 @@ def _uid(request: Request) -> int:
     return uid
 
 
+def _check_content_length(request: Request) -> None:
+    """Pre-flight check: reject obvious oversize uploads before we even
+    read the body. Caddy's `request_body max_size` is the canonical
+    line of defense; this is belt-and-braces for direct API calls."""
+    cl = request.headers.get("content-length")
+    if cl is None:
+        return  # streaming/chunked — let downstream code catch it
+    try:
+        n = int(cl)
+    except ValueError:
+        return
+    limit = settings().max_upload_bytes
+    if n > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=f"upload too large: {n} bytes (max {limit})",
+        )
+
+
 @router.post("/attachments")
+@_upload_limiter.limit(lambda: settings().attachment_rate_limit)
 async def upload_attachment(
     request: Request,
     file: UploadFile = File(...),
@@ -33,7 +70,15 @@ async def upload_attachment(
 ):
     """Upload a file. Multipart form-data with field `file`. Optionally
     link to an item via `item_id`. Returns the attachment row.
+
+    Protection layers (defense in depth):
+      1. Caddy `request_body max_size 10MB` — proxy-level cap
+      2. `_check_content_length` — rejects oversize Content-Length here
+      3. Per-user/IP rate limit (default 20/hour)
+      4. `validate_upload` inside `create_attachment` — magic-byte check
+         + final size cap + per-user quota
     """
+    _check_content_length(request)
     uid = _uid(request)
     data = await file.read()
     mime = file.content_type or "application/octet-stream"
@@ -48,7 +93,14 @@ async def upload_attachment(
             alt_text=alt_text,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # validate_upload raises ValueError for size, magic-mismatch,
+        # quota. 413 for size-related, 415 for magic, 400 for the rest.
+        msg = str(e)
+        if "too large" in msg or "quota exceeded" in msg:
+            raise HTTPException(status_code=413, detail=msg)
+        if "mismatch" in msg or "not allowed" in msg or "unrecognised" in msg:
+            raise HTTPException(status_code=415, detail=msg)
+        raise HTTPException(status_code=400, detail=msg)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

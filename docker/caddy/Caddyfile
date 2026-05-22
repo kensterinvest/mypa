@@ -36,8 +36,16 @@
         reverse_proxy mypa-mcp:8023
     }
 
-    # REST API
+    # REST API — attachments path gets a 10 MB body cap (matches
+    # mypa.settings.max_upload_bytes). Named-matcher + request_body
+    # inside the /api/* block preserves the path-stripping behaviour
+    # of handle_path so FastAPI's /attachments route receives the
+    # correct (stripped) path.
     handle_path /api/* {
+        @attach path /attachments*
+        request_body @attach {
+            max_size 10MB
+        }
         reverse_proxy mypa-api:8022
     }
 
