@@ -10,6 +10,53 @@ For end-user onboarding, send them [USER_GUIDE.md](USER_GUIDE.md).
 
 ---
 
+## Server requirements
+
+**Minimum (one user, no photo attachments):**
+
+| Resource | Value |
+|---|---|
+| CPU | 1 vCPU |
+| RAM | 1 GB (with at least 1 GB swap recommended) |
+| Disk | 10 GB SSD |
+| OS | Ubuntu 22.04 LTS or 24.04 LTS |
+| Network | Static IPv4, ports 22 / 80 / 443 open in cloud firewall AND OS UFW |
+| Domain | Two DNS A records: `mypa.<your-domain>` and `ntfy.<your-domain>` (the second is only needed if you want push notifications) |
+
+**Comfortable (family of 5, attachments, growing archive):**
+
+| Resource | Value |
+|---|---|
+| CPU | 2 vCPU |
+| RAM | 2 GB |
+| Disk | 25 GB SSD |
+
+**Tested providers & instance sizes:**
+
+| Provider | Smallest instance that works | Approx. monthly cost |
+|---|---|---|
+| Hetzner Cloud | CX22 (2 vCPU, 4 GB) | €4.51 |
+| IONOS | Linux S | £8 |
+| DigitalOcean | Basic Droplet (1 vCPU, 1 GB) | $6 |
+| Linode/Akamai | Nanode 1 GB | $5 |
+| AWS Lightsail | $5/mo plan (512 MB → tight, recommend $7 for 1 GB) | $5-7 |
+
+Other Linux distros work but `setup.sh` assumes `apt`. If you're on
+RHEL/Fedora/Arch you'll be doing the package installs manually.
+
+**Disk growth pattern:**
+- Database file (`/var/lib/mypa/mypa.db`): grows slowly — typically &lt; 100 MB even after years for text-only use
+- Attachments (`/var/lib/mypa/blobs/`): each image ~100 KB-2 MB; budget accordingly
+- Snapshots (`/srv/backups/mypa-snapshots/`): 30 days × DB size + blobs
+
+**No external dependencies after install** — no managed database, no
+S3, no Anthropic API calls from MyPA itself (you'd hit Anthropic from
+Claude.ai; MyPA never calls out).
+
+---
+
+---
+
 ## User management
 
 Every command below is run on the VPS as the `mypa` system user.

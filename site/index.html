@@ -9,7 +9,7 @@
 <meta property="og:description" content="Self-hosted personal archive. Structured, encrypted, multi-user. Today Claude reads it; tomorrow whatever's next does too.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/style.css">
 <link rel="icon" type="image/svg+xml" href="public/favicon.svg">
 </head>
@@ -18,9 +18,9 @@
 <!-- ==================== NAV ==================== -->
 <header class="nav">
   <a href="#" class="brand">
-    <img src="assets/img/logo-mark.svg" alt="" class="brand-svg" width="36" height="36">
+    <span class="brand-monogram">[<i></i>]</span>
     <span class="brand-name">My<em>PA</em></span>
-    <span class="brand-sub">my&nbsp;personal&nbsp;archive</span>
+    <span class="brand-sub">// my personal archive</span>
   </a>
   <nav class="nav-links">
     <a href="#demo">Demo</a>
@@ -447,14 +447,45 @@
   <div class="section-head">
     <p class="kicker">Self-host it</p>
     <h2>Four commands, forty-five minutes.</h2>
-    <p class="lede">You'll need: a Linux VPS (~£8-15/mo: Hetzner, IONOS, DigitalOcean), a domain pointed at it, and root SSH. MyPA installs everything else.</p>
+    <p class="lede">Modest hardware, two DNS records, root SSH. MyPA installs everything else.</p>
+  </div>
+
+  <div class="specs-panel">
+    <div class="specs-col">
+      <h4>Minimum hardware</h4>
+      <ul>
+        <li><strong>1 CPU · 1 GB RAM · 10 GB disk</strong></li>
+        <li>Any Linux VPS for £5-15/mo</li>
+        <li>Verified: Hetzner CX22 (£4/mo), IONOS Linux&nbsp;S (£8/mo), DigitalOcean Basic ($6/mo)</li>
+        <li>Ubuntu 22.04 LTS or 24.04 LTS</li>
+      </ul>
+    </div>
+    <div class="specs-col">
+      <h4>Comfortable hardware</h4>
+      <ul>
+        <li><strong>2 CPU · 2 GB RAM · 25 GB disk</strong></li>
+        <li>Family of 5+ with photo attachments: this tier</li>
+        <li>Hetzner CX32 (~£6/mo), DigitalOcean Premium ($12/mo)</li>
+      </ul>
+    </div>
+    <div class="specs-col">
+      <h4>Network &amp; DNS</h4>
+      <ul>
+        <li>Ports <strong>22, 80, 443</strong> open (cloud firewall + OS UFW)</li>
+        <li>Two DNS A records → your VPS IP:<br>
+          <code>mypa.yourdomain.com</code><br>
+          <code>ntfy.yourdomain.com</code> <em>(optional, only if you want push notifications)</em></li>
+        <li>Root SSH access (you'll harden it via <code>setup.sh</code>)</li>
+      </ul>
+    </div>
   </div>
 
   <ol class="setup-steps">
     <li>
       <h3>Point your domain at the VPS</h3>
       <p>Add two A records: <code>mypa.example.com</code> and
-      <code>ntfy.example.com</code> → your VPS IP.</p>
+      <code>ntfy.example.com</code> → your VPS IP. (ntfy is optional —
+      skip it if you don't want push notifications.)</p>
     </li>
     <li>
       <h3>Clone &amp; install</h3>

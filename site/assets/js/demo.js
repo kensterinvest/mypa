@@ -93,7 +93,7 @@
   }
 
   function setScene(n, label) {
-    sceneLabel.textContent = `Scene ${n} of 6 — ${label}`;
+    sceneLabel.textContent = `Scene ${n} of 7 — ${label}`;
   }
 
   // -- Scenes ------------------------------------------------------------
@@ -225,7 +225,7 @@
   }
 
   async function scene2() {
-    setScene(3, 'A morning, gathered');
+    setScene(3, 'A morning push');
     clearAll();
 
     // Items already in the archive — today's relevant slice
@@ -283,7 +283,7 @@
   }
 
   async function sceneTravel() {
-    setScene(4, 'Travel intelligence');
+    setScene(5, 'Travel intelligence');
     clearAll();
 
     const u = addMsg('user', '');
@@ -326,8 +326,57 @@
     await gsap.to({}, { duration: 2.6 });
   }
 
+  async function sceneMorningBriefing() {
+    setScene(4, '"What\'s on my plate today?"');
+    clearAll();
+
+    const u = addMsg('user', '');
+    await gsap.to(u, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(u, 'Good morning — what\'s on my plate today?', { speed: 20 });
+    await gsap.to({}, { duration: 0.4 });
+
+    const ack = addMsg('claude', 'Let me check your archive for today.');
+    await gsap.to(ack, { opacity: 1, y: 0, duration: 0.4 });
+
+    // Multiple tool calls in sequence
+    const t1 = addMsg('tool', 'pa_list(kind="event", due_at="today")');
+    await gsap.to(t1, { opacity: 1, y: 0, duration: 0.3 });
+    const t2 = addMsg('tool', 'pa_list(kind="todo", due_at="today")');
+    await gsap.to(t2, { opacity: 1, y: 0, duration: 0.3 });
+    const t3 = addMsg('tool', 'pa_search(q="birthday", due_at="this_week")');
+    await gsap.to(t3, { opacity: 1, y: 0, duration: 0.3 });
+    const t4 = addMsg('tool', 'pa_list(kind="contract", due_within="30d")');
+    await gsap.to(t4, { opacity: 1, y: 0, duration: 0.3 });
+
+    // Cards stagger in across the archive view
+    const cards = [
+      { id: '#47', kind: 'event', title: 'Dentist — Dr. Sharma',
+        when: 'Today · 10:30', why: 'Allow 45 min · SW1' },
+      { id: '#42', kind: 'todo', title: 'Pick up Kepei from piano',
+        when: 'Today · 16:00', why: 'Push set for 15:45' },
+      { id: '#19', kind: 'person', title: 'Mum — birthday today',
+        when: '🎂 Today',
+        why: 'Last gift: vintage cookbook (3y ago, she loved it)' },
+      { id: '#43', kind: 'contract', title: 'IONOS VPS renews in 6 days',
+        when: 'May 28 · £12/mo', why: 'Decision: keep XL+ or downsize?' },
+    ];
+    for (const spec of cards) {
+      const c = addIndexCard(spec);
+      await gsap.to(c, { opacity: 1, y: 0, rotate: 0, duration: 0.4, ease: 'power2.out' });
+    }
+    await gsap.to({}, { duration: 0.3 });
+
+    const reply = addMsg('claude', '');
+    await gsap.to(reply, { opacity: 1, y: 0, duration: 0.3 });
+    await typeInto(reply,
+      'Here\'s your day:\n\n📅 Dentist 10:30 · pick up Kepei 16:00\n🎂 It\'s Mum\'s birthday today — last gift was a cookbook she loved\n⚠️ IONOS VPS renews in 6 days, worth deciding if you still need the XL+ tier\n\nWant me to draft a birthday message, or queue any of these as todos?',
+      { speed: 14 });
+
+    await gsap.to({}, { duration: 3.2 });
+  }
+
   async function sceneCrossMcp() {
-    setScene(5, 'When another MCP leaves a mark');
+    setScene(6, 'When another MCP leaves a mark');
     clearAll();
 
     // 5.1 — User asks Claude to book a hotel via another MCP
@@ -392,7 +441,7 @@
   }
 
   async function scene3() {
-    setScene(6, 'Recall, across kinds');
+    setScene(7, 'Recall, across kinds');
     clearAll();
 
     const user = addMsg('user', '');
@@ -459,6 +508,8 @@
         await sceneDecisionOutcome();
         if (ac.aborted) break;
         await scene2();
+        if (ac.aborted) break;
+        await sceneMorningBriefing();
         if (ac.aborted) break;
         await sceneTravel();
         if (ac.aborted) break;
