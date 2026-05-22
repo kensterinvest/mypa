@@ -20,6 +20,11 @@
     return;
   }
 
+  // Global pacing — slow every animation + pause by 30% so the demo
+  // reads at a comfortable scanning pace. Set timescale < 1 = slower.
+  gsap.globalTimeline.timeScale(0.77);
+  const TYPE_SCALE = 1.3;   // multiplier applied to typing-speed ms/char
+
   // -- DOM refs ----------------------------------------------------------
   const chatBody = document.getElementById('chat-body');
   const storeBody = document.getElementById('store-body');
@@ -46,7 +51,7 @@
 
   /** Type text into an element char-by-char. */
   function typeInto(el, text, opts = {}) {
-    const speed = opts.speed || 22;   // ms per char
+    const speed = (opts.speed || 22) * TYPE_SCALE;   // ms per char
     return new Promise((resolve) => {
       let i = 0;
       el.innerHTML = '<span class="chat-cursor"></span>';
