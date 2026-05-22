@@ -300,6 +300,14 @@ def disable_user(db: Session, user_id: int) -> bool:
         text("UPDATE users SET disabled_at = datetime('now') WHERE id = :i"),
         {"i": user_id},
     )
+    # Surgical OAuth revoke: drop all refresh tokens for this user_id so
+    # their existing sessions cannot continue past the next access-token
+    # expiry (default 1h). Without this, OAUTH_JWT_SECRET rotation is the
+    # only way to revoke — which nukes EVERY user's session.
+    db.execute(
+        text("DELETE FROM oauth_refresh_tokens WHERE user_subject = :u"),
+        {"u": str(user_id)},
+    )
     db.commit()
     # Revoke ntfy account — they should not be able to receive any more pushes.
     if notify_topic and settings().ntfy_user_mgmt_enabled:

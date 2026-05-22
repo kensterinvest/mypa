@@ -53,7 +53,8 @@ def _apply_oauth_schema():
     """
     from sqlalchemy import text
     eng = db.engine()
-    for fname in ("002_oauth.sql", "003_users.sql", "005_notifications.sql", "006_ntfy_token.sql"):
+    for fname in ("002_oauth.sql", "003_users.sql", "005_notifications.sql",
+                  "006_ntfy_token.sql", "007_refresh_token_rotation.sql"):
         sql_path = Path(__file__).parent.parent / "migrations" / fname
         sql = sql_path.read_text(encoding="utf-8")
         sql = "\n".join(l for l in sql.splitlines() if not l.lstrip().startswith("--"))

@@ -269,8 +269,11 @@ async def token_endpoint(
         if consumed is None:
             return JSONResponse({"error": "invalid_grant"}, status_code=400)
         access = oauth_lib.issue_jwt(client_id, consumed["user_subject"], consumed["scope"], issuer)
+        # OAuth 2.1 / RFC 6749 §10.4: issue a rotated refresh token alongside.
+        # The old one is now marked used; replaying it revokes the family.
         return JSONResponse({
             "access_token": access,
+            "refresh_token": consumed["new_refresh_token"],
             "token_type": "Bearer",
             "expires_in": settings().oauth_access_token_ttl_sec,
             "scope": consumed["scope"],

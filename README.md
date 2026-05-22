@@ -222,4 +222,9 @@ user isolation.
 
 ## License
 
-MIT (planned, finalised before v1 release).
+MIT — see [LICENSE](LICENSE).
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and the
+current hardening defaults.

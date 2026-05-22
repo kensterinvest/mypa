@@ -247,35 +247,103 @@ def verify_jwt(token: str) -> dict | None:
 
 
 def issue_refresh_token(
-    db: Session, client_id: str, user_subject: str, scope: str
+    db: Session, client_id: str, user_subject: str, scope: str,
+    family_id: str | None = None, parent_id: str | None = None,
 ) -> str:
+    """Create a refresh token.
+
+    `family_id` groups successive rotations of the same logical session.
+    On first issuance (login) it's None — we'll generate one. On rotation
+    (consume_refresh_token issuing a successor) pass the same family_id
+    so reuse can be detected across the whole chain.
+    """
     token = gen_secret(48)
     expires_at = _now() + timedelta(seconds=settings().oauth_refresh_token_ttl_sec)
+    if family_id is None:
+        family_id = gen_secret(16)
     db.execute(
         text(
-            "INSERT INTO oauth_refresh_tokens (token_id, client_id, scope, "
-            "user_subject, expires_at) VALUES (:t, :c, :s, :u, :e)"
+            "INSERT INTO oauth_refresh_tokens "
+            "(token_id, client_id, scope, user_subject, expires_at, "
+            " family_id, parent_id) "
+            "VALUES (:t, :c, :s, :u, :e, :f, :p)"
         ),
-        {"t": hash_secret(token), "c": client_id, "s": scope, "u": user_subject, "e": expires_at.isoformat()},
+        {"t": hash_secret(token), "c": client_id, "s": scope, "u": user_subject,
+         "e": expires_at.isoformat(), "f": family_id, "p": parent_id},
     )
     db.commit()
     return token
 
 
 def consume_refresh_token(db: Session, token: str, client_id: str) -> dict | None:
-    """Validate refresh, return {scope, user_subject} for issuing a new access token."""
+    """Validate + rotate refresh token (RFC 6749 §10.4 / OAuth 2.1).
+
+    Returns {scope, user_subject, new_refresh_token} for issuing a
+    new access token and a fresh refresh token to replace this one.
+    Returns None on any failure (expired, revoked, unknown, OR reused).
+
+    On reuse detection (token was already consumed once), revoke the
+    entire token family — both the attacker's stolen copy and the
+    legit user's chain die together; the legit user re-logs in.
+    """
+    token_id = hash_secret(token)
     row = db.execute(
         text(
-            "SELECT scope, user_subject, expires_at, revoked_at FROM oauth_refresh_tokens "
-            "WHERE token_id = :t AND client_id = :c"
+            "SELECT scope, user_subject, expires_at, revoked_at, used_at, family_id "
+            "FROM oauth_refresh_tokens WHERE token_id = :t AND client_id = :c"
         ),
-        {"t": hash_secret(token), "c": client_id},
+        {"t": token_id, "c": client_id},
     ).fetchone()
-    if row is None or row[3] is not None:
+    if row is None:
         return None
-    expires_at = datetime.fromisoformat(row[2])
+    scope, user_subject, expires_at_s, revoked_at, used_at, family_id = row
+
+    # Revoked? Reject.
+    if revoked_at is not None:
+        return None
+
+    # Expired? Reject.
+    expires_at = datetime.fromisoformat(expires_at_s)
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if _now() > expires_at:
         return None
-    return {"scope": row[0], "user_subject": row[1]}
+
+    # REUSE DETECTED — this token was already consumed once.
+    # Whoever is presenting it now is either:
+    #   (a) the attacker who stole it after the legit user rotated, or
+    #   (b) the legit user who lost their successor and is replaying
+    #       an old one.
+    # We can't distinguish. The RFC-recommended response is to revoke
+    # the entire family — that includes the legit user's currently-valid
+    # successor, forcing both parties offline. Legit user re-logs in;
+    # attacker is locked out for good.
+    if used_at is not None:
+        db.execute(
+            text(
+                "UPDATE oauth_refresh_tokens SET revoked_at = :now, reason = 'reuse' "
+                "WHERE family_id = :f AND revoked_at IS NULL"
+            ),
+            {"now": _now().isoformat(), "f": family_id},
+        )
+        db.commit()
+        return None
+
+    # Happy path — mark this token used and let the caller issue a successor.
+    db.execute(
+        text("UPDATE oauth_refresh_tokens SET used_at = :now WHERE token_id = :t"),
+        {"now": _now().isoformat(), "t": token_id},
+    )
+    new_token = gen_secret(48)
+    new_expires_at = _now() + timedelta(seconds=settings().oauth_refresh_token_ttl_sec)
+    db.execute(
+        text(
+            "INSERT INTO oauth_refresh_tokens "
+            "(token_id, client_id, scope, user_subject, expires_at, family_id, parent_id) "
+            "VALUES (:t, :c, :s, :u, :e, :f, :p)"
+        ),
+        {"t": hash_secret(new_token), "c": client_id, "s": scope, "u": user_subject,
+         "e": new_expires_at.isoformat(), "f": family_id, "p": token_id},
+    )
+    db.commit()
+    return {"scope": scope, "user_subject": user_subject, "new_refresh_token": new_token}
