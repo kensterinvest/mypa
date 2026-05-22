@@ -1,207 +1,139 @@
-# MyPA — personal AI hub
+<div align="center">
 
-**Encrypted personal knowledge base + REST API + MCP server with OAuth 2.1.**
-Designed to be deployed on your own VPS and used from any MCP client
-(Claude.ai mobile/desktop, Claude Code, custom tools).
+<img src="site/assets/img/logo-mark.svg" width="84" alt="MyPA logo — a manila file-tab with an oxblood wax-seal monogram">
 
-- **Storage**: SQLCipher-encrypted SQLite. Your data is opaque on disk.
-- **Schema**: one flexible `items` table with 19+ kinds (todo, decision,
-  preference, place, person, contract, event, …). Rich markdown bodies.
-- **Auth**: bearer tokens (RW + RO) for direct use; full OAuth 2.1 + PKCE
-  for Claude.ai connectors.
-- **Transports**: REST (`/api/*`) and MCP Streamable HTTP (`/mcp/sse`).
-- **Open source, multi-user per deployment** — designed for a family or
-  small org. Admin provisions users via CLI; each user's items are
-  isolated by `user_id`. Different families each install their own copy.
+# MyPA — your personal archive, for AI
 
-Docs:
-- **[docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md)** — connect Claude.ai
-- **[docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)** — push notifications via self-hosted ntfy
-- **[docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md)** — operators: add users, backups, rotation
-- **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** — end users: dashboard + Claude
-- **[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)** — read before deploying
+**The memory layer underneath your AI. Self-hosted, encrypted, owned by you.**
+
+[🌐 **Live site & demo** →](https://mypa.z-tidus.com/) &nbsp;·&nbsp;
+[📖 Quick start](#quick-start) &nbsp;·&nbsp;
+[🛡️ Security policy](SECURITY.md) &nbsp;·&nbsp;
+[📝 Changelog](CHANGELOG.md) &nbsp;·&nbsp;
+[⚙️ Admin guide](docs/ADMIN_GUIDE.md)
+
+[![CI](https://github.com/kensterinvest/mypa/actions/workflows/ci.yml/badge.svg)](https://github.com/kensterinvest/mypa/actions/workflows/ci.yml)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+![Version: v1.0.0](https://img.shields.io/badge/version-v1.0.0-7A2E1F)
+
+</div>
 
 ---
 
-## Architecture at a glance
+## What is MyPA?
 
-```
-[ Claude.ai mobile/desktop ]                     [ Web dashboard ]
-        │                                                │
-        │ OAuth 2.1 + JWT bearer                         │ static bearer (RO)
-        ▼                                                ▼
-        ┌─────────────────────────────────────────────────────┐
-        │  Caddy on z-tidus.com:443                            │
-        │    /api/*        → mypa-api (uvicorn, FastAPI)       │
-        │    /mcp/*        → mypa-mcp (uvicorn, MCP server)    │
-        │    /oauth/*      → mypa-api                          │
-        │    /.well-known/oauth-authorization-server → mypa-api│
-        │    /             → /var/www/mypa-dashboard (SPA)     │
-        └─────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                   SQLCipher-encrypted DB at /var/lib/mypa/mypa.db
-                   Blobs at /var/lib/mypa/blobs/
-```
+Modern AI has memory now — Claude, ChatGPT, Copilot all remember things
+across chats. That memory is useful, but it lives on the vendor's servers,
+is bound to one product, can be silently rewritten, doesn't reach outside
+the chat, and disappears if you change provider or they change pricing.
 
----
+**MyPA is the archive layer underneath.** A self-hosted SQLite-on-your-VPS
+personal knowledge base — structured, queryable, encrypted at rest,
+multi-user per install — that any AI speaking the open
+[MCP protocol](https://modelcontextprotocol.io) can read and write.
 
-## Quick start (deploy to your own VPS)
+Today Claude reads your archive. Tomorrow whatever's next does too.
+The archive doesn't migrate; the AI does.
 
-### Prereqs
+**See the live site for the full pitch + animated demo →
+[mypa.z-tidus.com](https://mypa.z-tidus.com/)**
 
-- Ubuntu 24.04 LTS VPS with root SSH access
-- Domain pointed at the VPS (A record)
-- Ports 80, 443 open in your cloud firewall
-- Caddy installed (`apt install caddy`)
-- Python 3.12+, SQLCipher (`apt install sqlcipher libsqlcipher-dev`)
+## Why it's different from native AI memory
 
-### Install
+| | Claude.ai memory | ChatGPT memory | MyPA |
+|---|---|---|---|
+| Carries context across chats | ✓ within Claude | ✓ within ChatGPT | ✓ across **any** MCP-AI |
+| Structured queries (kind, date, tag) | freeform text | freeform text | ✓ kinds, fields, FTS5 |
+| Append-only decision history | silently revised | silently revised | ✓ verbatim, forever |
+| Pushes reminders to your phone | ✗ | ✗ | ✓ self-hosted ntfy |
+| Multi-user (family / small org) | 5 × subscriptions | 5 × subscriptions | 1 install, isolated |
+| Lives on your hardware | ✗ Anthropic cloud | ✗ OpenAI cloud | ✓ your VPS |
+| Vendor can read your data | yes | yes | **no** |
+| Moves with you to the next AI | ✗ Claude-only | ✗ ChatGPT-only | ✓ MCP is open |
+| Family-of-5 cost / month | ~£75 | ~£80 | **~£10** (just the VPS) |
+
+**Use both.** Native memory for conversational style. MyPA for the
+durable, structured facts of your life.
+
+## Features
+
+- **Multi-tenant** — one install serves a family or small org, each user
+  isolated; verified by tests at three layers (service / REST / MCP)
+- **SQLCipher** AES-256 encryption at rest; backups equally opaque
+- **OAuth 2.1 + PKCE** for Claude.ai connector login, with RFC 6749 §10.4
+  refresh-token rotation and reuse detection
+- **10 MCP tools**: `pa_add`, `pa_get`, `pa_list`, `pa_search`,
+  `pa_describe_schema`, `pa_undo_last`, `pa_delete`, `pa_update`,
+  `pa_complete`, `pa_add_reminder`, plus `pa_attach_image`,
+  `pa_get_notify_prefs`, `pa_set_notify_prefs`
+- **Push notifications** via self-hosted [ntfy](https://ntfy.sh), with
+  authenticated publish + per-user read tokens (no spoofing)
+- **REST API + Angular dashboard** for browsing
+- **Image attachments** — content-addressed, deduplicated, user-scoped
+- **MIT licensed**, end-to-end exportable as Markdown + YAML
+
+## Quick start
+
+You'll need: a Linux VPS (Hetzner, IONOS, DigitalOcean — ~£8-15/mo), a
+domain pointed at it, root SSH.
 
 ```bash
-# 1. Clone the repo
+# 1. Point your domain at the VPS:
+#    Add A records for  mypa.example.com  and  ntfy.example.com  → your IP
+#
+# 2. Clone and install (installs caddy, sqlcipher, ntfy, python deps,
+#    systemd units, sudoers, Let's Encrypt; configures auth on every layer):
 git clone https://github.com/kensterinvest/mypa.git /opt/mypa
 cd /opt/mypa
-
-# 2. Create system user + dirs
-sudo useradd --system --create-home --home-dir /var/lib/mypa \
-  --shell /usr/sbin/nologin mypa
-sudo install -d -m 750 -o mypa -g mypa /var/lib/mypa /etc/mypa
-sudo install -d -m 755 -o mypa -g mypa /opt/mypa
-
-# 3. Venv + deps
-sudo -u mypa python3 -m venv /opt/mypa/.venv
-sudo -u mypa /opt/mypa/.venv/bin/pip install \
-  "fastapi>=0.110" "uvicorn[standard]>=0.27" "mcp>=1.27" \
-  "sqlalchemy>=2" sqlcipher3-binary "pydantic>=2.5" "pydantic-settings>=2" \
-  "psutil>=5.9" "httpx>=0.27" "python-telegram-bot>=21" \
-  "anthropic>=0.40" "apscheduler>=3.10" "slowapi" "pyjwt[crypto]>=2.8"
-
-# 4. Generate secrets + write env
-RW=$(openssl rand -base64 36 | tr -d "\n=+/" | head -c 40)
-RO=$(openssl rand -base64 36 | tr -d "\n=+/" | head -c 40)
-KEY=$(openssl rand -base64 48 | tr -d "\n=+/" | head -c 64)
-JWT=$(openssl rand -base64 48 | tr -d "\n=+/" | head -c 64)
-sudo tee /etc/mypa/env > /dev/null <<EOF
-PUBLIC_HOST=mypa.example.com
-USER_NAME=alice
-TZ=Europe/London
-LOCALE=en-GB
-BEARER_TOKEN_RW=${RW}
-BEARER_TOKEN_RO=${RO}
-SQLCIPHER_KEY=${KEY}
-OAUTH_JWT_SECRET=${JWT}
-DB_PATH=/var/lib/mypa/mypa.db
-AUDIT_LOG_PATH=/var/log/mypa-mcp.log
-EOF
-sudo chmod 0600 /etc/mypa/env
-sudo chown mypa:mypa /etc/mypa/env
-# ⚠️ Save RW, KEY, JWT in your password manager NOW — RW is the OAuth login,
-# KEY decrypts the DB, JWT signs all access tokens.
-
-# 5. Initialize DB
-cd /opt/mypa && sudo -u mypa bash -c \
-  "set -a; source /etc/mypa/env; set +a; cd /opt/mypa; \
-   PYTHONPATH=/opt/mypa /opt/mypa/.venv/bin/python scripts/init_db.py && \
-   PYTHONPATH=/opt/mypa /opt/mypa/.venv/bin/python scripts/apply_migrations.py"
-
-# 6. systemd units (see deploy/ in repo)
-sudo cp deploy/mypa-api.service deploy/mypa-mcp.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now mypa-api mypa-mcp
-
-# 7. Caddyfile (add to /etc/caddy/Caddyfile)
-sudo tee -a /etc/caddy/Caddyfile > /dev/null <<'EOF'
-mypa.example.com {
-    encode gzip zstd
-    handle /.well-known/oauth-authorization-server { reverse_proxy 127.0.0.1:8022 }
-    handle /oauth/* { reverse_proxy 127.0.0.1:8022 }
-    handle_path /mcp/* { reverse_proxy 127.0.0.1:8023 }
-    handle_path /api/* { reverse_proxy 127.0.0.1:8022 }
-    handle {
-        root * /var/www/mypa-dashboard
-        try_files {path} /index.html
-        file_server
-    }
-}
-EOF
-sudo systemctl reload caddy
+sudo bash setup.sh
+#
+# 3. Save the credentials it prints (BEARER_TOKEN_RW, SQLCIPHER_KEY,
+#    OAUTH_JWT_SECRET, NTFY_ADMIN_PASSWORD, NTFY_PUBLISH_PASSWORD).
+#    Losing SQLCIPHER_KEY = losing the database. No recovery.
+#
+# 4. Connect Claude.ai (desktop browser):
+#    Settings → Connectors → + Add custom →
+#    URL: https://mypa.example.com/mcp/sse → Sign in with email+password.
+#    Your phone inherits the connector automatically.
 ```
 
-Verify:
+Full walkthrough: [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md) and
+[docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md).
 
-```bash
-curl https://mypa.example.com/api/health
-# → {"status":"ok",...}
-curl https://mypa.example.com/.well-known/oauth-authorization-server
-# → OAuth discovery metadata
+## Architecture
+
+```
+   Claude.ai (mobile + desktop)         Web dashboard            Phone (ntfy)
+              │                              │                       ▲
+              │ OAuth 2.1 + JWT              │ email+password         │ push
+              ▼                              ▼                       │
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │  Caddy on mypa.example.com:443                                       │
+   │    /                        → static landing page                    │
+   │    /app/*                   → Angular dashboard                      │
+   │    /api/*, /auth/*          → mypa-api (FastAPI + OAuth)             │
+   │    /mcp/*                   → mypa-mcp (MCP Streamable HTTP)         │
+   │    /oauth/*, /.well-known/* → mypa-api (OAuth endpoints)             │
+   └─────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 ▼
+                  SQLCipher-encrypted SQLite at /var/lib/mypa/mypa.db
+                  Blobs at /var/lib/mypa/blobs/
+                  Nightly VACUUM INTO snapshots, 30d retention
+                  Push via self-hosted ntfy.example.com (auth required)
 ```
 
-### Connect Claude.ai
+## Documentation
 
-See [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md) for the full walkthrough.
-TL;DR: claude.ai → Settings → Connectors → Custom →
-URL = `https://mypa.example.com/mcp/sse` → connect → paste your
-`BEARER_TOKEN_RW` on the authorize page.
-
----
-
-## MCP tools
-
-| Tool | Use |
+| Doc | For |
 |---|---|
-| `pa_describe_schema()` | List all kinds + casual-capture mapping hints |
-| `pa_add(kind, title, body, data, tags, due_at, context)` | Save new item |
-| `pa_get(item_id)` | Fetch one |
-| `pa_list(kind, status, due_before, tag, limit)` | Filtered list |
-| `pa_search(q, limit)` | Free-text search across title/body/tags |
-| `pa_update(item_id, fields..., allow_history_rewrite)` | Partial update; decision items append-only by convention |
-| `pa_complete(item_id)` | Mark done |
-| `pa_delete(item_id, confirm=True)` | Hard delete (destructive — require confirm) |
-| `pa_undo_last(source)` | Soft-undo most recent save |
-| `pa_add_reminder(item_id, fire_at, message)` | Schedule reminder (Telegram delivery pending Phase 2) |
-
----
-
-## Configuration
-
-Every secret, identity, and integration credential comes from
-`/etc/mypa/env`. See `mypa/settings.py` for all fields with defaults.
-
-Key knobs:
-
-| Env var | Purpose | Default |
-|---|---|---|
-| `PUBLIC_HOST` | Hostname Caddy serves on | `mypa.z-tidus.com` |
-| `BEARER_TOKEN_RW` | Full-access static bearer | required |
-| `BEARER_TOKEN_RO` | Read-only static bearer | required |
-| `SQLCIPHER_KEY` | DB encryption key | required (unless `TEST_NO_ENCRYPTION=true`) |
-| `OAUTH_JWT_SECRET` | HS256 signing key for OAuth JWTs | required for OAuth |
-| `TELEGRAM_BOT_TOKEN` / `_CHAT_ID` | Outbound reminders (Phase 2) | optional |
-| `ANTHROPIC_API_KEY` | Claude vision image extraction (Phase 3) | optional |
-| `GOOGLE_CLIENT_ID` / `_SECRET` | Gmail + Calendar (Phase 4-5) | optional |
-| `IMPLICIT_LOCATION_CAPTURE` | Capture location from EXIF / browser | `false` (privacy default) |
-
----
-
-## Roadmap
-
-| Phase | What | Status |
-|---|---|---|
-| 1 | Core API + SQLCipher DB + MCP (10 tools) | ✅ shipped |
-| 1.5 | Nightly snapshot via VACUUM INTO | ✅ shipped |
-| OAuth | OAuth 2.1 + PKCE for Claude.ai connectors | ✅ shipped |
-| MCP CRUD | pa_delete, pa_update, pa_complete, pa_add_reminder | ✅ shipped |
-| Dashboard | Angular SPA (email/password login + items list) | ✅ shipped |
-| Multi-tenant | users table + per-user OAuth + isolation tests + admin CLI | ✅ shipped |
-| Productization | LICENSE, setup.sh, deploy/ templates, kinds.yaml loader | ✅ shipped |
-| 2 | Telegram bot — bidirectional capture + reminders | planned |
-| 3 | Image-to-record via Claude vision | planned |
-| 4 | Gmail integration | planned |
-| 5 | Calendar two-way sync | planned |
-| Dashboard polish | Item detail, markdown rendering, calendar view | planned |
-
----
+| [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md) | Connecting Claude.ai mobile + desktop |
+| [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) | ntfy setup, push notifications, mobile app config |
+| [docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) | Operators — user management, backups, rotation, recovery |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | End users — dashboard + Claude usage |
+| [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | What's protected, what isn't |
+| [SECURITY.md](SECURITY.md) | Vulnerability disclosure |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 
 ## Development
 
@@ -209,22 +141,53 @@ Key knobs:
 git clone https://github.com/kensterinvest/mypa.git
 cd mypa
 python -m venv .venv
-.venv/bin/pip install -e .[dev]   # or per-package pip install ...
-export TEST_NO_ENCRYPTION=true     # Windows: no SQLCipher wheel
-pytest -q
+.venv/bin/pip install \
+  "fastapi>=0.110" "uvicorn[standard]>=0.27" "mcp>=1.27" \
+  "sqlalchemy>=2" "pydantic>=2.5" "pydantic-settings>=2" \
+  "httpx>=0.27" "pyjwt[crypto]>=2.8" "slowapi" "apscheduler>=3.10" \
+  "pytest>=8" "python-multipart>=0.0.9"
+export TEST_NO_ENCRYPTION=true
+export NTFY_USER_MGMT_ENABLED=false
+export BEARER_TOKEN_RW=test
+export BEARER_TOKEN_RO=test
+export OAUTH_JWT_SECRET=test
+PYTHONPATH=. pytest -q
 ```
 
-34 tests covering items CRUD, OAuth flow, DCR validation, decision
-append-only enforcement, RW/RO token scoping, and multi-tenant
-user isolation.
+56 tests cover the security boundaries: cross-user isolation, OAuth + DCR,
+refresh-token rotation + reuse detection, login throttle, decision
+append-only enforcement, attachment dedup + isolation, ntfy account
+lifecycle.
 
----
+## Repo layout
+
+```
+mypa/
+├── mypa/             # FastAPI app + MCP server + OAuth + scheduler
+├── migrations/       # 007 SQL migrations (001..007)
+├── scripts/          # init_db, add_user, change_password, backfills
+├── tests/            # 56 tests, pytest
+├── deploy/           # systemd units, Caddyfile snippet, logrotate
+├── docs/             # OAUTH_SETUP, ADMIN_GUIDE, USER_GUIDE, etc.
+├── site/             # The static landing page deployed to mypa.z-tidus.com/
+├── setup.sh          # Single-command installer
+├── README.md         # this file
+├── LICENSE           # MIT
+├── SECURITY.md
+└── CHANGELOG.md
+```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Use it. Fork it. Self-host it. Sell support
+around it. Ship it inside your product. The code is yours.
 
-## Security
+## Acknowledgements
 
-See [SECURITY.md](SECURITY.md) for vulnerability reporting and the
-current hardening defaults.
+Built on the shoulders of:
+[FastAPI](https://fastapi.tiangolo.com),
+[SQLCipher](https://www.zetetic.net/sqlcipher/),
+[ntfy](https://ntfy.sh),
+[Caddy](https://caddyserver.com),
+[Angular](https://angular.dev),
+[Model Context Protocol](https://modelcontextprotocol.io).

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mypa-site.z-tidus.com/sitemap.xml

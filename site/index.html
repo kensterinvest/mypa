@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyPA — your own personal librarian for AI</title>
+<meta name="description" content="MyPA is a self-hosted, encrypted personal knowledge base that lets Claude (or any MCP-compatible AI) remember your decisions, preferences, places, contracts, todos. Your data lives on your VPS, not in someone else's cloud.">
+<meta property="og:title" content="MyPA — your own personal librarian for AI">
+<meta property="og:description" content="Self-hosted personal AI memory. Open source. Encrypted. Family-ready.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="icon" type="image/svg+xml" href="public/favicon.svg">
+</head>
+<body>
+
+<!-- ==================== NAV ==================== -->
+<header class="nav">
+  <a href="#" class="brand">
+    <img src="assets/img/logo-mark.svg" alt="" class="brand-svg" width="36" height="36">
+    <span class="brand-name">My<em>PA</em></span>
+    <span class="brand-sub">my&nbsp;personal&nbsp;archive</span>
+  </a>
+  <nav class="nav-links">
+    <a href="#demo">Demo</a>
+    <a href="#what">What it does</a>
+    <a href="#compare">vs&nbsp;Claude&nbsp;alone</a>
+    <a href="#setup">Self-host</a>
+    <a href="/app/" class="nav-signin">Sign&nbsp;in</a>
+    <a class="cta-mini" href="https://github.com/kensterinvest/mypa" target="_blank" rel="noopener">GitHub →</a>
+  </nav>
+</header>
+
+<!-- ==================== HERO ==================== -->
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-text">
+      <p class="kicker">EST. 2026 · OPEN&nbsp;SOURCE · SELF-HOSTED</p>
+      <h1 class="hero-title">Your life,<br><em>filed properly.</em></h1>
+      <p class="hero-sub">
+        Modern AI has memory — bound to one product, opaque, single-user,
+        deletable when the vendor changes their mind. <strong>MyPA is the
+        archive underneath</strong>: structured, queryable, exportable,
+        multi-tenant, and yours. Today Claude reads from it. Tomorrow
+        whatever&nbsp;comes&nbsp;next does too.
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#demo">Watch the demo</a>
+        <a class="link" href="https://github.com/kensterinvest/mypa" target="_blank" rel="noopener">View on GitHub →</a>
+      </div>
+      <ul class="hero-meta">
+        <li><span>MIT</span>&nbsp;licensed</li>
+        <li><span>SQLCipher</span>&nbsp;AES-256</li>
+        <li><span>Multi-tenant</span>&nbsp;per install</li>
+      </ul>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <!-- Manila card-catalog SVG. Real photo recommended (see IMAGERY.md) -->
+      <svg viewBox="0 0 360 460" xmlns="http://www.w3.org/2000/svg" class="catalog-svg">
+        <defs>
+          <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#8b6849"/><stop offset="1" stop-color="#5e4530"/>
+          </linearGradient>
+        </defs>
+        <!-- cabinet body -->
+        <rect x="40" y="20" width="280" height="420" rx="6" fill="url(#wood)"/>
+        <rect x="40" y="20" width="280" height="420" rx="6" fill="none" stroke="#3a2a1c" stroke-width="2"/>
+        <!-- 6 drawers -->
+        <g>
+          <rect x="56" y="40" width="248" height="60" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
+          <rect x="56" y="110" width="248" height="60" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
+          <rect x="56" y="180" width="248" height="60" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
+          <!-- open drawer -->
+          <rect x="56" y="250" width="248" height="60" rx="4" fill="#e9dec9" stroke="#3a2a1c"/>
+          <rect x="56" y="320" width="248" height="60" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
+          <rect x="56" y="390" width="248" height="32" rx="4" fill="#d9cdb7" stroke="#3a2a1c"/>
+          <!-- handles -->
+          <circle cx="180" cy="70" r="6" fill="#3a2a1c"/>
+          <circle cx="180" cy="140" r="6" fill="#3a2a1c"/>
+          <circle cx="180" cy="210" r="6" fill="#3a2a1c"/>
+          <circle cx="180" cy="280" r="6" fill="#3a2a1c"/>
+          <circle cx="180" cy="350" r="6" fill="#3a2a1c"/>
+          <!-- index card sticking out of drawer 4 -->
+          <g transform="translate(0,-30) rotate(-3, 180, 280)">
+            <rect x="100" y="240" width="160" height="40" rx="2" fill="#f4efe6" stroke="#3a2a1c"/>
+            <line x1="115" y1="252" x2="245" y2="252" stroke="#7a2e1f" stroke-width="0.5"/>
+            <line x1="115" y1="262" x2="230" y2="262" stroke="#1c1a17" stroke-width="0.4" opacity="0.6"/>
+            <line x1="115" y1="270" x2="215" y2="270" stroke="#1c1a17" stroke-width="0.4" opacity="0.6"/>
+          </g>
+          <!-- drawer labels -->
+          <text x="68" y="76" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">A — C · decisions</text>
+          <text x="68" y="146" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">D — H · preferences</text>
+          <text x="68" y="216" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">I — N · contracts</text>
+          <text x="68" y="356" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">P — S · places</text>
+          <text x="68" y="412" font-family="Inter" font-size="10" font-weight="500" fill="#3f4a3a" letter-spacing="0.1em">T — Z · todos &amp; events</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== PULL QUOTE ==================== -->
+<section class="pullquote">
+  <p>
+    Yes — Claude has memory now. ChatGPT too. They're useful for
+    "remember I prefer Python." But that memory lives on their servers,
+    is bound to your subscription, can be silently rewritten by the
+    vendor, doesn't move with you when the next AI gets better, and
+    can't reach outside the chat to remind you about anything.
+    <em>This is convenience without sovereignty.</em> MyPA is the
+    archive at the back of the study — structured, queryable,
+    yours&nbsp;for&nbsp;decades.
+  </p>
+</section>
+
+<!-- ==================== WHY (the central question) ==================== -->
+<section id="why" class="why-section">
+  <div class="section-head">
+    <p class="kicker">The honest question</p>
+    <h2>"Claude already remembers me.<br>So why MyPA?"</h2>
+    <p class="lede">Native AI memory and a personal archive answer different questions. Both useful. Both can coexist. But the shape of the problem is different.</p>
+  </div>
+
+  <div class="why-grid">
+    <article class="why-col why-them">
+      <h3>What native AI memory does</h3>
+      <ul>
+        <li>Carries context across chats <em>in the same product</em></li>
+        <li>Stores freeform text the vendor curates</li>
+        <li>Useful for small conversational preferences</li>
+        <li>Always on, zero setup</li>
+        <li>Bound to one account, one vendor, one app</li>
+      </ul>
+      <p class="why-note">Great for: "Use Python 3.12 by default." "I prefer brief answers." "I live in London."</p>
+    </article>
+
+    <article class="why-col why-us">
+      <h3>What MyPA does differently</h3>
+      <ul>
+        <li><strong>Structured</strong> — items have kinds, dates, fields. Filter "all decisions about investments." List "places rated 5★." Query like a database.</li>
+        <li><strong>Append-only decisions</strong> — your original reasoning is preserved verbatim. The vendor can't quietly rewrite it later.</li>
+        <li><strong>Reaches outside the chat</strong> — daily morning digest, real push reminders, integrations. Memory that does things.</li>
+        <li><strong>Multi-user per install</strong> — your whole family on one VPS, each with isolated data. Not five subscriptions.</li>
+        <li><strong>AI-portable</strong> — MCP is an open protocol. Switch from Claude to whatever's next without migrating data.</li>
+        <li><strong>On your hardware</strong> — SQLCipher-encrypted, your key, your VPS. Anthropic never sees a single item.</li>
+        <li><strong>Exportable</strong> — Markdown + YAML, Obsidian-shaped. Will outlive any of today's vendors.</li>
+      </ul>
+      <p class="why-note">Great for: durable life data — decisions, contracts, places, preferences, todos, anything you'll still care about in 5 years.</p>
+    </article>
+  </div>
+
+  <p class="why-foot">
+    <em>The model:</em> native memory holds your conversational style; MyPA holds the durable facts of your life. They complement each other. Use both.
+  </p>
+</section>
+
+<!-- ==================== DEMO ==================== -->
+<section id="demo" class="demo">
+  <div class="section-head">
+    <p class="kicker">A live demonstration</p>
+    <h2>Watch Claude actually use it.</h2>
+    <p class="lede">Three real flows — saving a decision, getting a morning push, recalling a past choice — animated in your browser. Not a screen-recording, not a slide deck. Press play, or it'll loop on its own.</p>
+  </div>
+
+  <div class="demo-stage" aria-label="Animated demo of Claude using MyPA">
+    <!-- Built by demo.js — left: chat panel, right: MyPA store panel + push toast -->
+    <div class="demo-frame">
+      <div class="demo-controls">
+        <button id="demo-play" class="demo-btn" aria-label="Play">▶</button>
+        <button id="demo-pause" class="demo-btn" aria-label="Pause">⏸</button>
+        <button id="demo-restart" class="demo-btn" aria-label="Restart">↻</button>
+        <span class="demo-scene-label" id="demo-scene-label">Scene 1 of 3 — Save a decision</span>
+      </div>
+      <div class="demo-window">
+        <div class="demo-chat" id="demo-chat">
+          <div class="chat-header">
+            <span class="chat-dot"></span><span class="chat-dot"></span><span class="chat-dot"></span>
+            <span class="chat-title">claude.ai · with MyPA connector</span>
+          </div>
+          <div class="chat-body" id="chat-body"></div>
+        </div>
+        <div class="demo-store" id="demo-store">
+          <div class="store-header">
+            <span class="store-eyebrow">your MyPA · encrypted on your VPS</span>
+            <span class="store-status" id="store-status">● online</span>
+          </div>
+          <div class="store-body" id="store-body">
+            <div class="store-empty">— no items saved yet —</div>
+          </div>
+        </div>
+        <div class="demo-push" id="demo-push" aria-hidden="true">
+          <div class="push-header">MyPA · now</div>
+          <div class="push-title" id="push-title"></div>
+          <div class="push-body" id="push-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== WHAT ==================== -->
+<section id="what" class="what">
+  <div class="section-head">
+    <p class="kicker">What goes in the archive</p>
+    <h2>The shape of a personal life, organised.</h2>
+    <p class="lede">Six kinds of durable life data that benefit from being structured, queryable, and held across decades — not lost in chat transcripts.</p>
+  </div>
+
+  <div class="cards">
+    <article class="card">
+      <div class="card-num">01</div>
+      <h3><em>Decisions</em>, with reasoning intact.</h3>
+      <p>"Bought 100 ABC at £2.10 because Q4 margins expanded and the sector hasn't rotated yet." Append-only by design — five years later when you ask "why did I buy that?", your own past reasoning is verbatim. The vendor can't quietly rewrite it.</p>
+    </article>
+
+    <article class="card">
+      <div class="card-num">02</div>
+      <h3><em>Contracts &amp; durable facts</em>.</h3>
+      <p>Renewal dates, account numbers (never passwords — use a password manager), support phone trees, policy IDs, IBANs. The stuff you Google in a panic. Your AI should already have it. Filter <code>kind:contract end_before:2027</code> — done.</p>
+    </article>
+
+    <article class="card">
+      <div class="card-num">03</div>
+      <h3><em>Places</em>, with how you felt about them.</h3>
+      <p>"Pizza Express on King's Road, rated 5★, visited 20 May." Months later: <em>"What restaurants have I rated 5★ in London?"</em> — Claude opens the drawer and reads. Filter by city, by tag, by date.</p>
+    </article>
+
+    <article class="card">
+      <div class="card-num">04</div>
+      <h3><em>Preferences</em>, captured casually.</h3>
+      <p>"Pizza is so good, help me remember." "Cilantro tastes like soap." "Kepei loves dinosaurs." Casual remarks become structured records. Next time you ask for restaurant ideas or birthday-gift suggestions, your AI already knows the whole family.</p>
+    </article>
+
+    <article class="card">
+      <div class="card-num">05</div>
+      <h3><em>Todos &amp; reminders</em> that actually fire.</h3>
+      <p>"Remind me at 14:00 to pick up Kepei." The push lands on your phone — authenticated, on your own infrastructure, no Slack-style notification overload. Daily morning digest of what's due. Per-user-configurable hour and channel.</p>
+    </article>
+
+    <article class="card">
+      <div class="card-num">06</div>
+      <h3><em>Multi-user</em> by design.</h3>
+      <p>One MyPA install serves your family or small team. Each member has their own credentials, their own archive, their own notifications. No cross-tenant leakage — verified by tests. The architecture you wish Notion had at five seats.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ==================== COMPARE ==================== -->
+<section id="compare" class="compare">
+  <div class="section-head">
+    <p class="kicker">A fair comparison</p>
+    <h2>Side by side, with all the modern features acknowledged.</h2>
+    <p class="lede">Claude memory and ChatGPT memory are real and useful. They solve a different problem. Here's the line-by-line:</p>
+  </div>
+
+  <div class="compare-table-wrap">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Claude.ai memory</th>
+          <th>ChatGPT memory</th>
+          <th class="own">MyPA + any MCP&nbsp;AI</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>Carries context across chats</th>
+          <td>yes — within one Claude account</td>
+          <td>yes — within one ChatGPT account</td>
+          <td class="own">yes — across <em>any</em> MCP-compatible AI</td>
+        </tr>
+        <tr>
+          <th>Structured queries (kind, date, tag)</th>
+          <td>no — freeform text only</td>
+          <td>no — freeform text only</td>
+          <td class="own">yes — kinds, fields, FTS5 full-text, filters</td>
+        </tr>
+        <tr>
+          <th>Append-only decision history</th>
+          <td>no — silently revised by the model</td>
+          <td>no — silently revised</td>
+          <td class="own">yes — your past reasoning is verbatim, forever</td>
+        </tr>
+        <tr>
+          <th>Pushes reminders to your phone</th>
+          <td>no — chat-bound</td>
+          <td>no — chat-bound</td>
+          <td class="own">yes — self-hosted ntfy, authenticated, free</td>
+        </tr>
+        <tr>
+          <th>Daily morning digest of what's due</th>
+          <td>no</td>
+          <td>no</td>
+          <td class="own">yes — per-user configurable hour</td>
+        </tr>
+        <tr>
+          <th>Where your data physically lives</th>
+          <td>Anthropic's cloud</td>
+          <td>OpenAI's cloud</td>
+          <td class="own">your VPS — SQLCipher-encrypted, your key</td>
+        </tr>
+        <tr>
+          <th>Vendor can read your data</th>
+          <td>yes — for safety + model training opt-out flow</td>
+          <td>yes — same</td>
+          <td class="own">no — they never see it</td>
+        </tr>
+        <tr>
+          <th>Survives if vendor changes ToS / pricing</th>
+          <td>no — bound to subscription</td>
+          <td>no — same</td>
+          <td class="own">yes — you own the install + data</td>
+        </tr>
+        <tr>
+          <th>Moves with you to the next AI</th>
+          <td>no — Claude-only</td>
+          <td>no — ChatGPT-only</td>
+          <td class="own">yes — MCP is an open protocol</td>
+        </tr>
+        <tr>
+          <th>Family of 5 (each isolated)</th>
+          <td>5 × Pro at ~£15/mo = £75/mo</td>
+          <td>5 × Plus at ~£16/mo = £80/mo</td>
+          <td class="own">1 VPS at ~£10/mo = £10/mo</td>
+        </tr>
+        <tr>
+          <th>Exportable to Obsidian/Notion/anything</th>
+          <td>limited — copy/paste only</td>
+          <td>limited</td>
+          <td class="own">yes — Markdown + YAML frontmatter, one command</td>
+        </tr>
+        <tr>
+          <th>Setup effort</th>
+          <td>zero — just opens</td>
+          <td>zero — just opens</td>
+          <td class="own">~45 minutes, one time</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="compare-foot">
+    <em>Use both.</em> Native AI memory for conversational style and small
+    preferences. MyPA for the durable, structured, queryable facts of your
+    life. They aren't rivals — they're layers.
+  </p>
+</section>
+
+<!-- ==================== PHOTO DIVIDER ==================== -->
+<section class="photo-divider" aria-hidden="true">
+  <blockquote>
+    "The plain meaning of self-hosted is just this: the cabinet is in your study, not someone else's library."
+    <cite>— The Archivist's Note</cite>
+  </blockquote>
+</section>
+
+<!-- ==================== AI INTEGRATION ==================== -->
+<section id="integrate" class="integrate">
+  <div class="section-head">
+    <p class="kicker">How it plugs in</p>
+    <h2>One MCP connector, every AI ecosystem.</h2>
+    <p class="lede">MyPA speaks the Model Context Protocol — Anthropic's open standard for connecting tools to LLMs. Claude.ai supports it natively today. Other vendors are following.</p>
+  </div>
+
+  <div class="integrate-grid">
+    <article class="integrate-box">
+      <div class="integrate-emoji">🤖</div>
+      <h3>Claude.ai (mobile + desktop)</h3>
+      <p>Add `https://mypa.&lt;your-domain&gt;/mcp/sse` as a custom connector. OAuth 2.1 with PKCE, family-friendly auth. Mobile inherits desktop's connectors — no second setup.</p>
+      <code>Settings → Connectors → + Add custom</code>
+    </article>
+
+    <article class="integrate-box">
+      <div class="integrate-emoji">💻</div>
+      <h3>Claude Code (CLI)</h3>
+      <p>Add MCP server via the CLI. Same endpoint, same tools (`pa_add`, `pa_search`, `pa_get`, `pa_list`, `pa_delete`, ...). Works from any laptop you SSH from.</p>
+      <code>claude mcp add mypa &lt;url&gt;</code>
+    </article>
+
+    <article class="integrate-box">
+      <div class="integrate-emoji">📱</div>
+      <h3>Push notifications (ntfy)</h3>
+      <p>Self-hosted ntfy server bundled with the install. Authenticated, per-user topics, true revocation. Mobile apps for iOS + Android — free, open-source.</p>
+      <code>ntfy.&lt;your-domain&gt;</code>
+    </article>
+
+    <article class="integrate-box">
+      <div class="integrate-emoji">🌐</div>
+      <h3>REST + Web dashboard</h3>
+      <p>FastAPI REST for scripts/cron, Angular dashboard for browsing. Email + password login per user. Read your data from any browser, anywhere.</p>
+      <code>mypa.&lt;your-domain&gt;/api/*</code>
+    </article>
+  </div>
+</section>
+
+<!-- ==================== SETUP ==================== -->
+<section id="setup" class="setup">
+  <div class="section-head">
+    <p class="kicker">Self-host it</p>
+    <h2>Four commands, forty-five minutes.</h2>
+    <p class="lede">You'll need: a Linux VPS (~£8-15/mo: Hetzner, IONOS, DigitalOcean), a domain pointed at it, and root SSH. MyPA installs everything else.</p>
+  </div>
+
+  <ol class="setup-steps">
+    <li>
+      <h3>Point your domain at the VPS</h3>
+      <p>Add two A records: <code>mypa.example.com</code> and
+      <code>ntfy.example.com</code> → your VPS IP.</p>
+    </li>
+    <li>
+      <h3>Clone &amp; install</h3>
+<pre><code>git clone https://github.com/kensterinvest/mypa.git /opt/mypa
+cd /opt/mypa
+sudo bash setup.sh</code></pre>
+      <p>The installer pulls dependencies (Caddy, Python, SQLCipher, ntfy),
+      generates secrets, sets up systemd, configures TLS via Let's Encrypt,
+      provisions ntfy with auth on by default. Prompts for your domain,
+      timezone, your admin email.</p>
+    </li>
+    <li>
+      <h3>Save the credentials it prints</h3>
+      <p>At the end you'll see your <code>BEARER_TOKEN_RW</code>,
+      <code>SQLCIPHER_KEY</code>, <code>OAUTH_JWT_SECRET</code>, and the
+      ntfy publish + admin passwords. Save them in your password manager.
+      Lose the SQLCipher key, lose the database. <em>(There is no recovery.)</em></p>
+    </li>
+    <li>
+      <h3>Connect Claude.ai</h3>
+      <p>On a desktop browser:
+      claude.ai → Settings → Connectors → + Add custom →
+      URL: <code>https://mypa.example.com/mcp/sse</code> → Connect →
+      login with your email + admin password. Your phone inherits the
+      connector automatically.</p>
+    </li>
+  </ol>
+
+  <p class="setup-foot">
+    For family members: <code>scripts/add_user.py alice@example.com</code>
+    creates their account + ntfy login. Share the credentials securely
+    once.
+  </p>
+</section>
+
+<!-- ==================== SECURITY ==================== -->
+<section id="security" class="security">
+  <div class="section-head">
+    <p class="kicker">Honest about security</p>
+    <h2>What's protected. What isn't.</h2>
+    <p class="lede">No magic. The threats MyPA defends against and the ones it doesn't, in plain English.</p>
+  </div>
+
+  <div class="security-grid">
+    <div class="security-good">
+      <h3>✓ Protected against</h3>
+      <ul>
+        <li>Stolen disk / backup snapshot — SQLCipher AES-256, opaque without the key</li>
+        <li>Cross-tenant data leakage — every query scoped by <code>user_id</code> at three layers, regression-tested</li>
+        <li>Notification spoofing — ntfy <code>auth-default-access: deny-all</code>, authenticated publish only</li>
+        <li>Refresh token theft — single-use rotation per RFC 6749 §10.4; replay revokes the whole token family</li>
+        <li>OAuth login brute force — per-(IP, email) throttling (5 fails / 5 min)</li>
+        <li>Stale credentials after user removal — <code>disable_user()</code> surgically revokes refresh tokens + ntfy account</li>
+      </ul>
+    </div>
+    <div class="security-bad">
+      <h3>✗ Not protected against (and why)</h3>
+      <ul>
+        <li>Compromise of the running mypa-api process — the encryption key lives in memory by definition. Defence-in-depth via narrow sudoers and audit log.</li>
+        <li>Operator with VPS root — they see everything. That's you. Trust your VPS provider accordingly.</li>
+        <li>Apple/Google seeing notification content — every iOS/Android push system has this hop. Don't put secrets in notification text.</li>
+        <li>ntfy cache (12h) is plaintext — operator-root readable. Lower retention if it matters.</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="security-foot">
+    Detailed write-up: <a href="https://github.com/kensterinvest/mypa/blob/main/docs/THREAT_MODEL.md" target="_blank" rel="noopener">THREAT_MODEL.md</a>
+    on GitHub.
+  </p>
+</section>
+
+<!-- ==================== FAQ ==================== -->
+<section id="faq" class="faq">
+  <div class="section-head">
+    <p class="kicker">Frequently answered</p>
+    <h2>Questions you'll have.</h2>
+  </div>
+
+  <details>
+    <summary>Claude already has memory. Isn't this redundant?</summary>
+    <p>Claude memory and ChatGPT memory are great for conversational
+    continuity — "use Python", "I live in London", "I prefer short
+    answers." They aren't great at: structured queries ("all decisions
+    about investments"), preserving the <em>why</em> of past choices
+    without silent revision, surviving a vendor change, multi-user
+    architecture, reaching outside the chat to push a reminder, or
+    being yours when the company gets acquired. Use both — they're
+    different layers of the same need.</p>
+  </details>
+
+  <details>
+    <summary>What if I switch from Claude to a different AI later?</summary>
+    <p>MyPA speaks MCP — Anthropic's open protocol that other vendors
+    are adopting. Switch from Claude.ai to whatever comes next; your
+    archive doesn't move. The new AI plugs into the same MCP endpoint,
+    reads the same data. No migration, no export-import, no lost
+    history. This is the entire point.</p>
+  </details>
+
+  <details>
+    <summary>What does it cost to run?</summary>
+    <p>£0 software + ~£8-15/mo VPS. No per-user fees. A 5-person family
+    install costs the same as a 1-person install. No API calls to Anthropic
+    are made by MyPA itself (Claude calls Anthropic; MyPA just holds the data).</p>
+  </details>
+
+  <details>
+    <summary>Will it work with GPT / Gemini / Copilot?</summary>
+    <p>Today: Claude.ai natively (mobile + desktop), plus any agent that
+    speaks MCP. Other vendors are adopting MCP — once their clients support
+    custom connectors, MyPA works without code changes. The MCP protocol
+    is the abstraction.</p>
+  </details>
+
+  <details>
+    <summary>What happens to my data if the project dies?</summary>
+    <p>Your data lives on your VPS, in a SQLite file you can open with
+    standard tools. There's a Markdown-export tool. If MyPA the project
+    goes dormant tomorrow, your install keeps running. Self-hosted means
+    self-sovereign.</p>
+  </details>
+
+  <details>
+    <summary>Is the dashboard required?</summary>
+    <p>No. The dashboard is for browsing. Everything you actually do
+    happens through Claude (or REST scripts). You can skip the dashboard
+    install entirely if you only ever interact via AI.</p>
+  </details>
+
+  <details>
+    <summary>Can I use this for work / sensitive data?</summary>
+    <p>Read the <a href="https://github.com/kensterinvest/mypa/blob/main/docs/THREAT_MODEL.md" target="_blank" rel="noopener">threat model</a>
+    and make an informed call. MyPA is meant for personal-life data —
+    decisions, preferences, life admin. We don't recommend it for
+    regulated data (PII at scale, PHI, financial-services records)
+    without an additional review of your specific compliance regime.</p>
+  </details>
+</section>
+
+<!-- ==================== AUDIENCE ==================== -->
+<section id="audience" class="audience">
+  <div class="section-head">
+    <p class="kicker">An honest fit-check</p>
+    <h2>Is this for you?</h2>
+  </div>
+  <div class="audience-grid">
+    <div class="audience-yes">
+      <h3>You'll like this if…</h3>
+      <ul>
+        <li>You already keep notes / a journal / a personal wiki, and wish your AI could read them.</li>
+        <li>You run things on a VPS (Hetzner, IONOS, Linode, DigitalOcean…) or are comfortable doing so.</li>
+        <li>You'd rather pay a tenner a month for infra you own than a per-seat subscription you don't.</li>
+        <li>You think "vendor lock-in" sounds like something to avoid.</li>
+        <li>You have a family or small team who'd each benefit from their own AI memory.</li>
+        <li>The phrase "MCP server" doesn't make you flinch.</li>
+      </ul>
+    </div>
+    <div class="audience-no">
+      <h3>Skip this if…</h3>
+      <ul>
+        <li>You want something that "just works" with zero infra to maintain — Claude's hosted memory is for you.</li>
+        <li>You're not comfortable on the Linux command line and don't want to learn.</li>
+        <li>You handle regulated data (PHI, financial-services records at scale) — talk to a compliance specialist instead.</li>
+        <li>Your AI usage is occasional. The setup cost only pays back if you actually rely on it.</li>
+        <li>You want an iOS app on the App Store, polished onboarding, a 24/7 support line. MyPA is software you self-host, not a product you buy.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== CTA ==================== -->
+<section class="cta-final">
+  <h2>One hour to set up. Years of use.</h2>
+  <p>The hard part — security model, multi-tenant correctness — is done.
+  The rest is on your hands and your VPS.</p>
+  <div class="cta-buttons">
+    <a class="btn btn-primary" href="https://github.com/kensterinvest/mypa" target="_blank" rel="noopener">Get it on GitHub →</a>
+    <a class="btn btn-ghost" href="https://github.com/kensterinvest/mypa/blob/main/docs/ADMIN_GUIDE.md" target="_blank" rel="noopener">Read the admin guide</a>
+  </div>
+</section>
+
+<!-- ==================== FOOTER ==================== -->
+<footer class="footer" id="privacy">
+  <div class="footer-grid">
+    <div class="footer-col">
+      <h4>About</h4>
+      <p>MyPA is built and maintained by independent contributors.
+      Open source under MIT. Your install, your data, your rules.</p>
+    </div>
+
+    <div class="footer-col">
+      <h4>Project</h4>
+      <ul>
+        <li><a href="https://github.com/kensterinvest/mypa" target="_blank" rel="noopener">Source — github.com/kensterinvest/mypa</a></li>
+        <li><a href="https://github.com/kensterinvest/mypa/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+        <li><a href="https://github.com/kensterinvest/mypa/blob/main/SECURITY.md" target="_blank" rel="noopener">Security policy</a></li>
+        <li><a href="https://github.com/kensterinvest/mypa/blob/main/docs/THREAT_MODEL.md" target="_blank" rel="noopener">Threat model</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-col">
+      <h4>Privacy</h4>
+      <p>This landing page collects no analytics, no cookies, no telemetry.
+      No third-party scripts beyond Google Fonts (which Google records
+      independently of us — host the fonts locally if that matters to you).
+      MyPA itself stores all data on the operator's VPS; nothing is sent
+      to the maintainers of this project.</p>
+    </div>
+
+    <div class="footer-col">
+      <h4>Disclaimer</h4>
+      <p>MyPA is provided "as is" under the MIT license. The maintainers
+      offer no warranty. Self-hosted software requires operator competence
+      with Linux administration, backups, and TLS certificate management.
+      You are responsible for the security of your install. We are not a
+      service provider; we are not your data processor.</p>
+    </div>
+  </div>
+
+  <div class="footer-meta">
+    <p>© 2026 MyPA contributors. MIT-licensed. Site source:
+      <a href="https://github.com/kensterinvest/mypa-site" target="_blank" rel="noopener">github.com/kensterinvest/mypa-site</a>.
+    </p>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="assets/js/demo.js"></script>
+</body>
+</html>
