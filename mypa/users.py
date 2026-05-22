@@ -120,12 +120,13 @@ def create_user(
     existing = _select_user(db, email=email)
     if existing is not None:
         raise ValueError(f"user with email {email!r} already exists")
-    topic = "u-" + secrets.token_hex(8)  # 16 hex chars after "u-" — practical privacy
+    topic = "u-" + secrets.token_hex(8)  # 16 hex chars after "u-"
+    ntfy_password = _provision_ntfy_account(topic)
     db.execute(
-        text("INSERT INTO users (email, password_hash, name, is_admin, tz, notify_topic) "
-             "VALUES (:e, :h, :n, :a, :tz, :t)"),
+        text("INSERT INTO users (email, password_hash, name, is_admin, tz, notify_topic, notify_token) "
+             "VALUES (:e, :h, :n, :a, :tz, :t, :nt)"),
         {"e": email.lower(), "h": hash_password(password), "n": name,
-         "a": 1 if is_admin else 0, "tz": tz, "t": topic},
+         "a": 1 if is_admin else 0, "tz": tz, "t": topic, "nt": ntfy_password},
     )
     db.commit()
     user = _select_user(db, email=email)
@@ -133,29 +134,65 @@ def create_user(
     return user
 
 
-def rotate_notify_topic(db: Session, user_id: int) -> str:
-    """Generate a new random topic, store it, return the new value.
-    Existing mobile subscribers to the old topic stop receiving messages."""
-    topic = "u-" + secrets.token_hex(8)
+def _provision_ntfy_account(topic: str) -> str | None:
+    """Create a per-user ntfy account with read-only access to the topic.
+    Returns the generated password, or None if ntfy user-mgmt is disabled
+    (tests / dev environments without an ntfy server)."""
+    from .settings import settings
+    if not settings().ntfy_user_mgmt_enabled:
+        return None
+    try:
+        from . import ntfy_admin
+        return ntfy_admin.create_user_for_topic(topic)
+    except Exception:
+        # ntfy provisioning failures must not block user creation —
+        # operator can backfill via scripts later. Log and continue.
+        import logging
+        logging.getLogger(__name__).exception("ntfy_admin.create_user_for_topic failed for %s", topic)
+        return None
+
+
+def rotate_notify_topic(db: Session, user_id: int) -> tuple[str, str | None]:
+    """Generate a new topic + ntfy account; revoke the old. Returns
+    (new_topic, new_ntfy_password). Old subscribers stop working
+    immediately because the old ntfy user is deleted."""
+    from .settings import settings
+    old = db.execute(
+        text("SELECT notify_topic FROM users WHERE id = :i"),
+        {"i": user_id},
+    ).fetchone()
+    old_topic = old[0] if old else None
+
+    new_topic = "u-" + secrets.token_hex(8)
+    new_password = _provision_ntfy_account(new_topic)
     db.execute(
-        text("UPDATE users SET notify_topic = :t WHERE id = :i"),
-        {"t": topic, "i": user_id},
+        text("UPDATE users SET notify_topic = :t, notify_token = :nt WHERE id = :i"),
+        {"t": new_topic, "nt": new_password, "i": user_id},
     )
     db.commit()
-    return topic
+
+    # Revoke the old ntfy account — true revocation, not just "stopped using"
+    if old_topic and settings().ntfy_user_mgmt_enabled:
+        try:
+            from . import ntfy_admin
+            ntfy_admin.delete_user_for_topic(old_topic)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("ntfy_admin.delete_user_for_topic failed for %s", old_topic)
+    return new_topic, new_password
 
 
 def get_notify_settings(db: Session, user_id: int) -> dict:
-    """Read the user's tz + topic + parsed prefs JSON. Returns sensible
-    defaults for any missing keys."""
+    """Read the user's tz + topic + parsed prefs JSON + ntfy password.
+    Returns sensible defaults for any missing keys."""
     import json
     row = db.execute(
-        text("SELECT tz, notify_topic, notify_prefs FROM users WHERE id = :i"),
+        text("SELECT tz, notify_topic, notify_prefs, notify_token FROM users WHERE id = :i"),
         {"i": user_id},
     ).fetchone()
     if row is None:
         return {}
-    tz, topic, prefs_raw = row
+    tz, topic, prefs_raw, ntfy_token = row
     try:
         prefs = json.loads(prefs_raw) if prefs_raw else {}
     except json.JSONDecodeError:
@@ -170,7 +207,13 @@ def get_notify_settings(db: Session, user_id: int) -> dict:
         "overdue_hour": 9,
     }
     defaults.update(prefs)
-    return {"tz": tz or "Etc/UTC", "topic": topic, "prefs": defaults}
+    return {
+        "tz": tz or "Etc/UTC",
+        "topic": topic,
+        "ntfy_username": topic,  # convention: username == topic
+        "ntfy_password": ntfy_token,
+        "prefs": defaults,
+    }
 
 
 def set_notify_prefs(db: Session, user_id: int, patch: dict) -> dict:
@@ -239,9 +282,31 @@ def list_users(db: Session) -> list[User]:
 
 
 def disable_user(db: Session, user_id: int) -> bool:
-    r = db.execute(
-        text("UPDATE users SET disabled_at = datetime('now') WHERE id = :i AND disabled_at IS NULL"),
+    """Mark the user disabled AND revoke their ntfy account so push
+    delivery stops immediately. Returns True if a state change happened.
+
+    Does NOT revoke their MyPA JWTs — those expire within 1h naturally
+    (or rotate OAUTH_JWT_SECRET for immediate revocation across all users).
+    """
+    from .settings import settings
+    row = db.execute(
+        text("SELECT notify_topic FROM users WHERE id = :i AND disabled_at IS NULL"),
+        {"i": user_id},
+    ).fetchone()
+    if row is None:
+        return False
+    notify_topic = row[0]
+    db.execute(
+        text("UPDATE users SET disabled_at = datetime('now') WHERE id = :i"),
         {"i": user_id},
     )
     db.commit()
-    return r.rowcount > 0
+    # Revoke ntfy account — they should not be able to receive any more pushes.
+    if notify_topic and settings().ntfy_user_mgmt_enabled:
+        try:
+            from . import ntfy_admin
+            ntfy_admin.delete_user_for_topic(notify_topic)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("ntfy_admin.delete_user_for_topic on disable failed for %s", notify_topic)
+    return True

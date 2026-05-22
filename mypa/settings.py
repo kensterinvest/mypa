@@ -69,8 +69,19 @@ class Settings(BaseSettings):
     blob_dir: Path = Field(default=Path("/var/lib/mypa/blobs"))
 
     # --- Notifications (ntfy) ---
-    ntfy_base_url: str = Field(default="")  # e.g. "https://ntfy.z-tidus.com"
+    ntfy_base_url: str = Field(default="")           # e.g. "https://ntfy.z-tidus.com"
     notify_scheduler_enabled: bool = Field(default=True)
+    # Authenticated publish — mypa-api uses these basic-auth creds to POST.
+    # Anonymous publish is denied by server config (auth-default-access: deny-all).
+    ntfy_publish_user: str = Field(default="")
+    ntfy_publish_password: str = Field(default="")
+    # ntfy_admin_* — used by ntfy_admin.py's CLI calls (via sudo); the env
+    # values are loaded for use in operator scripts, NOT read by the
+    # running api process (which goes through sudo + the CLI).
+    ntfy_admin_user: str = Field(default="")
+    ntfy_admin_password: str = Field(default="")
+    # Disable per-user ntfy account management (tests, dev-without-ntfy).
+    ntfy_user_mgmt_enabled: bool = Field(default=True)
 
 
 _settings: Settings | None = None

@@ -34,6 +34,9 @@ def get_prefs(request: Request, db: Session = Depends(get_session)):
         "tz": s["tz"],
         "topic": s["topic"],
         "subscribe_url": f"{base}/{s['topic']}" if base and s["topic"] else None,
+        "ntfy_server": base or None,
+        "ntfy_username": s.get("ntfy_username"),
+        "ntfy_password": s.get("ntfy_password"),
         "prefs": s["prefs"],
     }
 
@@ -89,9 +92,11 @@ def rotate_topic(request: Request, db: Session = Depends(get_session)):
     old topic will stop receiving messages — they must re-subscribe to
     the new URL returned here."""
     uid = _uid(request)
-    new_topic = users_lib.rotate_notify_topic(db, uid)
+    new_topic, new_password = users_lib.rotate_notify_topic(db, uid)
     base = (settings().ntfy_base_url or "").rstrip("/")
     return {
         "topic": new_topic,
         "subscribe_url": f"{base}/{new_topic}" if base else None,
+        "ntfy_username": new_topic,
+        "ntfy_password": new_password,
     }

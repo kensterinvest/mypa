@@ -40,6 +40,10 @@ def publish(
 
     url = f"{base}/{topic}"
     headers: dict[str, str] = {"Content-Type": "text/plain; charset=utf-8"}
+    # Authenticated publish — server config rejects anonymous.
+    auth: tuple[str, str] | None = None
+    if s.ntfy_publish_user and s.ntfy_publish_password:
+        auth = (s.ntfy_publish_user, s.ntfy_publish_password)
     if title:
         try:
             title.encode("ascii")
@@ -56,7 +60,8 @@ def publish(
         headers["Tags"] = ",".join(tags)
 
     try:
-        r = httpx.post(url, content=message.encode("utf-8"), headers=headers, timeout=5.0)
+        r = httpx.post(url, content=message.encode("utf-8"), headers=headers,
+                       auth=auth, timeout=5.0)
     except httpx.HTTPError as e:
         log.warning("ntfy publish error topic=%s err=%s", topic, e)
         return False

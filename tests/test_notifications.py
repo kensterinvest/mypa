@@ -145,3 +145,51 @@ def test_notifier_publish_no_base_url_returns_false(monkeypatch):
     settings_mod._settings = None
     monkeypatch.setenv("NTFY_BASE_URL", "")
     assert notifier.publish("u-anything", message="x") is False
+
+
+def test_ntfy_account_lifecycle_with_user_mgmt(monkeypatch):
+    """When NTFY_USER_MGMT_ENABLED=true, create_user / rotate_notify_topic /
+    disable_user must call ntfy_admin. Mock out the CLI."""
+    from mypa import users as users_lib
+    from mypa import ntfy_admin
+    from mypa import settings as settings_mod
+
+    _setup()
+    # Flip user-mgmt on for this test only
+    monkeypatch.setenv("NTFY_USER_MGMT_ENABLED", "true")
+    settings_mod._settings = None
+
+    created: list[str] = []
+    deleted: list[str] = []
+    monkeypatch.setattr(ntfy_admin, "create_user_for_topic",
+                        lambda topic: (created.append(topic), "test-pw-" + topic)[1])
+    monkeypatch.setattr(ntfy_admin, "delete_user_for_topic",
+                        lambda topic: deleted.append(topic))
+
+    Session = session_factory()
+    with Session() as db:
+        user = users_lib.create_user(db, "c@e.com", "c-pw-1234567", name="C", tz="Europe/London")
+    assert len(created) == 1
+    first_topic = created[0]
+    assert first_topic.startswith("u-")
+
+    # Stored ntfy password should be the one ntfy_admin returned
+    with Session() as db:
+        s = users_lib.get_notify_settings(db, user.id)
+    assert s["ntfy_password"] == "test-pw-" + first_topic
+    assert s["ntfy_username"] == first_topic
+
+    # rotate — should provision new + delete old
+    with Session() as db:
+        new_topic, new_pw = users_lib.rotate_notify_topic(db, user.id)
+    assert new_topic != first_topic
+    assert first_topic in deleted   # old topic revoked
+    assert new_topic in created     # new topic provisioned
+    assert new_pw == "test-pw-" + new_topic
+
+    # disable — should delete the (current) ntfy account
+    deleted.clear()
+    with Session() as db:
+        ok = users_lib.disable_user(db, user.id)
+    assert ok is True
+    assert new_topic in deleted
