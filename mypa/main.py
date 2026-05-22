@@ -32,7 +32,12 @@ async def lifespan(app: FastAPI):
         )
     engine()
     _ensure_dashboard_client()
-    yield
+    from .scheduler import start_scheduler, stop_scheduler
+    start_scheduler()
+    try:
+        yield
+    finally:
+        stop_scheduler()
 
 
 def _ensure_dashboard_client() -> None:
@@ -99,6 +104,7 @@ async def ready() -> dict:
 from .routes import attachments as attachments_routes  # noqa: E402
 from .routes import auth_routes  # noqa: E402
 from .routes import items as items_routes  # noqa: E402
+from .routes import notify as notify_routes  # noqa: E402
 from .routes import oauth as oauth_routes  # noqa: E402
 from .routes import reminders as reminders_routes  # noqa: E402
 from .routes import search as search_routes  # noqa: E402
@@ -107,6 +113,7 @@ app.include_router(items_routes.router)
 app.include_router(reminders_routes.router)
 app.include_router(search_routes.router)
 app.include_router(attachments_routes.router)
+app.include_router(notify_routes.router)
 # OAuth router has paths at /.well-known/* and /oauth/* — mounted at root.
 app.include_router(oauth_routes.router)
 # Dashboard auth (email + password → JWT) at /auth/*

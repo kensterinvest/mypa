@@ -478,6 +478,90 @@ def pa_extract_from_image(
 
 
 # -----------------------------------------------------------------------------
+# Phase 4 — notification preferences (MCP surface so Claude can change them)
+# -----------------------------------------------------------------------------
+
+@mcp.tool()
+def pa_get_notify_prefs() -> dict:
+    """Return the calling user's notification settings: timezone,
+    ntfy subscribe URL, and per-channel preferences (realtime reminders,
+    daily digest hour, weekly overdue catch-up).
+
+    Use when the user asks 'when will MyPA remind me', 'how do I get
+    notifications', 'show me my notification settings'.
+    """
+    from . import users as users_lib
+    uid = current_user_id()
+    if uid is None:
+        audit("pa_get_notify_prefs", {}, "no user context", 1)
+        return {"error": "no user context"}
+    Session = session_factory()
+    with Session() as db:
+        s = users_lib.get_notify_settings(db, uid)
+    if not s:
+        return {"error": "user not found"}
+    base = (settings.public_host or "") if isinstance(settings, type) else ""
+    # Avoid coupling to mcp_server's `settings()` call — re-import:
+    from .settings import settings as _s
+    base = (_s().ntfy_base_url or "").rstrip("/")
+    audit("pa_get_notify_prefs", {}, "ok")
+    return {
+        "tz": s["tz"],
+        "subscribe_url": f"{base}/{s['topic']}" if base and s["topic"] else None,
+        "prefs": s["prefs"],
+    }
+
+
+@mcp.tool()
+def pa_set_notify_prefs(
+    tz: str | None = None,
+    realtime: bool | None = None,
+    digest_enabled: bool | None = None,
+    digest_hour: int | None = None,
+    overdue_weekly_enabled: bool | None = None,
+    overdue_day: int | None = None,
+    overdue_hour: int | None = None,
+) -> dict:
+    """Update notification preferences. Only fields you pass get changed.
+
+    Use when the user says 'change my digest time', 'turn off morning
+    notifications', 'remind me at 8am instead', 'I'm in Tokyo now —
+    update my timezone'.
+
+    Field guide:
+      - tz: IANA timezone (e.g. 'Europe/London', 'America/New_York').
+      - realtime: True/False — push reminders at their fire_at time.
+      - digest_enabled / digest_hour: daily morning summary (0-23 in user's TZ).
+      - overdue_weekly_enabled / overdue_day (0=Sun..6=Sat) / overdue_hour:
+        weekly catch-up listing overdue todos.
+    """
+    from . import users as users_lib
+    uid = current_user_id()
+    if uid is None:
+        return {"error": "no user context"}
+    patch: dict = {}
+    if tz is not None: patch["tz"] = tz
+    if realtime is not None: patch["realtime"] = bool(realtime)
+    if digest_enabled is not None: patch["digest_enabled"] = bool(digest_enabled)
+    if digest_hour is not None: patch["digest_hour"] = int(digest_hour)
+    if overdue_weekly_enabled is not None: patch["overdue_weekly_enabled"] = bool(overdue_weekly_enabled)
+    if overdue_day is not None: patch["overdue_day"] = int(overdue_day)
+    if overdue_hour is not None: patch["overdue_hour"] = int(overdue_hour)
+    if not patch:
+        return {"error": "no fields to update"}
+
+    Session = session_factory()
+    with Session() as db:
+        try:
+            result = users_lib.set_notify_prefs(db, uid, patch)
+        except ValueError as e:
+            audit("pa_set_notify_prefs", patch, f"rejected: {e}", 1)
+            return {"error": str(e)}
+    audit("pa_set_notify_prefs", patch, "ok")
+    return {"tz": result["tz"], "prefs": result["prefs"]}
+
+
+# -----------------------------------------------------------------------------
 # Outer FastAPI app with bearer auth — same shape as admin-mcp
 # -----------------------------------------------------------------------------
 

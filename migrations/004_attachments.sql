@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     bytes       INTEGER NOT NULL,
     path        TEXT NOT NULL,          -- relative to BLOB_DIR
     alt_text    TEXT,
-    exif_json   TEXT,                   -- nullable; populated only when IMPLICIT_LOCATION_CAPTURE=true
+    exif_json   TEXT,                   -- populated only when IMPLICIT_LOCATION_CAPTURE=true (nullable)
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

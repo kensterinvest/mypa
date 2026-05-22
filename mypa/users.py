@@ -106,9 +106,13 @@ def _select_user(db: Session, *, email: str | None = None, user_id: int | None =
 
 
 def create_user(
-    db: Session, email: str, password: str, name: str | None = None, is_admin: bool = False
+    db: Session, email: str, password: str, name: str | None = None, is_admin: bool = False,
+    tz: str = "Europe/London",
 ) -> User:
-    """Create a new user. Returns the created User (without the password)."""
+    """Create a new user. Returns the created User (without the password).
+    Auto-assigns a random `notify_topic` (16 hex chars) for ntfy push;
+    rotatable later via rotate_notify_topic().
+    """
     if not email or "@" not in email:
         raise ValueError("email must contain '@'")
     if len(password) < 8:
@@ -116,15 +120,80 @@ def create_user(
     existing = _select_user(db, email=email)
     if existing is not None:
         raise ValueError(f"user with email {email!r} already exists")
+    topic = "u-" + secrets.token_hex(8)  # 16 hex chars after "u-" — practical privacy
     db.execute(
-        text("INSERT INTO users (email, password_hash, name, is_admin) "
-             "VALUES (:e, :h, :n, :a)"),
-        {"e": email.lower(), "h": hash_password(password), "n": name, "a": 1 if is_admin else 0},
+        text("INSERT INTO users (email, password_hash, name, is_admin, tz, notify_topic) "
+             "VALUES (:e, :h, :n, :a, :tz, :t)"),
+        {"e": email.lower(), "h": hash_password(password), "n": name,
+         "a": 1 if is_admin else 0, "tz": tz, "t": topic},
     )
     db.commit()
     user = _select_user(db, email=email)
     assert user is not None
     return user
+
+
+def rotate_notify_topic(db: Session, user_id: int) -> str:
+    """Generate a new random topic, store it, return the new value.
+    Existing mobile subscribers to the old topic stop receiving messages."""
+    topic = "u-" + secrets.token_hex(8)
+    db.execute(
+        text("UPDATE users SET notify_topic = :t WHERE id = :i"),
+        {"t": topic, "i": user_id},
+    )
+    db.commit()
+    return topic
+
+
+def get_notify_settings(db: Session, user_id: int) -> dict:
+    """Read the user's tz + topic + parsed prefs JSON. Returns sensible
+    defaults for any missing keys."""
+    import json
+    row = db.execute(
+        text("SELECT tz, notify_topic, notify_prefs FROM users WHERE id = :i"),
+        {"i": user_id},
+    ).fetchone()
+    if row is None:
+        return {}
+    tz, topic, prefs_raw = row
+    try:
+        prefs = json.loads(prefs_raw) if prefs_raw else {}
+    except json.JSONDecodeError:
+        prefs = {}
+    # Merge with defaults
+    defaults = {
+        "realtime": True,
+        "digest_enabled": True,
+        "digest_hour": 7,
+        "overdue_weekly_enabled": False,
+        "overdue_day": 0,
+        "overdue_hour": 9,
+    }
+    defaults.update(prefs)
+    return {"tz": tz or "Etc/UTC", "topic": topic, "prefs": defaults}
+
+
+def set_notify_prefs(db: Session, user_id: int, patch: dict) -> dict:
+    """Merge `patch` into the user's notify_prefs JSON. Returns the new
+    full settings (via get_notify_settings)."""
+    import json
+    current = get_notify_settings(db, user_id)
+    if not current:
+        raise ValueError("user not found")
+    new_prefs = {**current["prefs"], **patch}
+    # tz is stored as a separate column for index-ability — handle if passed
+    if "tz" in patch:
+        db.execute(
+            text("UPDATE users SET tz = :tz WHERE id = :i"),
+            {"tz": patch["tz"], "i": user_id},
+        )
+        new_prefs.pop("tz", None)  # don't store in JSON
+    db.execute(
+        text("UPDATE users SET notify_prefs = :p WHERE id = :i"),
+        {"p": json.dumps(new_prefs), "i": user_id},
+    )
+    db.commit()
+    return get_notify_settings(db, user_id)
 
 
 def authenticate(db: Session, email: str, password: str) -> User | None:

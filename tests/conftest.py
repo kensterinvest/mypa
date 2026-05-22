@@ -41,12 +41,25 @@ def ensure_oauth_schema():
 
 
 def _apply_oauth_schema():
-    """Helper invoked from tests that need OAuth tables."""
+    """Helper invoked from tests that need OAuth tables.
+
+    Also applies 003 (users) and 005 (notifications) — every newer
+    feature assumed those columns exist, and we want one bootstrap
+    helper rather than fragmenting migration application across test
+    files. Each migration's CREATE/ALTER statements are idempotent or
+    swallow ALTER-on-existing errors.
+    """
     from sqlalchemy import text
     eng = db.engine()
-    sql_path = Path(__file__).parent.parent / "migrations" / "002_oauth.sql"
-    sql = sql_path.read_text(encoding="utf-8")
-    sql = "\n".join(l for l in sql.splitlines() if not l.lstrip().startswith("--"))
-    with eng.begin() as conn:
-        for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
-            conn.execute(text(stmt))
+    for fname in ("002_oauth.sql", "003_users.sql", "005_notifications.sql"):
+        sql_path = Path(__file__).parent.parent / "migrations" / fname
+        sql = sql_path.read_text(encoding="utf-8")
+        sql = "\n".join(l for l in sql.splitlines() if not l.lstrip().startswith("--"))
+        with eng.begin() as conn:
+            for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    # ALTER TABLE … ADD COLUMN raises if column exists
+                    # (ORM may have already created it via Base.metadata.create_all).
+                    pass

@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     audit_log_path: Path = Field(default=Path("/var/log/mypa-mcp.log"))
     blob_dir: Path = Field(default=Path("/var/lib/mypa/blobs"))
 
+    # --- Notifications (ntfy) ---
+    ntfy_base_url: str = Field(default="")  # e.g. "https://ntfy.z-tidus.com"
+    notify_scheduler_enabled: bool = Field(default=True)
+
 
 _settings: Settings | None = None
 
