@@ -115,7 +115,8 @@ sudo -u mypa "$TARGET_DIR/.venv/bin/pip" install --quiet \
     "fastapi>=0.110" "uvicorn[standard]>=0.27" "mcp>=1.27" \
     "sqlalchemy>=2" sqlcipher3-binary "pydantic>=2.5" "pydantic-settings>=2" \
     "psutil>=5.9" "httpx>=0.27" "python-telegram-bot>=21" \
-    "anthropic>=0.40" "apscheduler>=3.10" slowapi "pyjwt[crypto]>=2.8"
+    "anthropic>=0.40" "apscheduler>=3.10" slowapi "pyjwt[crypto]>=2.8" \
+    "Pillow>=10"
 
 # ---------- 5. /etc/mypa/env ----------
 say "Configuring /etc/mypa/env…"

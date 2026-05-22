@@ -13,6 +13,8 @@ This module is the *service layer*. REST and MCP both call into here.
 from __future__ import annotations
 
 import hashlib
+import io
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +23,98 @@ from sqlalchemy.orm import Session
 
 from .models import Attachment, Item
 from .settings import settings
+
+
+log = logging.getLogger(__name__)
+
+
+# MIMEs we'll downscale (raster, non-animated, well-supported by Pillow).
+# GIF excluded (might be animated). HEIC excluded (requires pillow-heif).
+# Audio + PDF obviously not images.
+_RESIZABLE_MIMES = frozenset({
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+})
+
+
+def resize_image_if_large(data: bytes, mime: str) -> bytes:
+    """Downscale a raster image if its longest edge exceeds the configured
+    max dimension. Strips EXIF (which includes GPS coords by default).
+
+    Returns the (possibly-rewritten) bytes. Original bytes returned
+    unchanged if:
+      - resize is disabled by settings
+      - mime is not in the resizable set
+      - image is already at or below max_dimension
+      - Pillow (or the codec) fails — we log + keep original bytes
+    """
+    s = settings()
+    if not s.image_resize_enabled:
+        return data
+    if mime not in _RESIZABLE_MIMES:
+        return data
+
+    try:
+        from PIL import Image
+    except ImportError:
+        log.warning("Pillow not installed — skipping image resize")
+        return data
+
+    try:
+        img = Image.open(io.BytesIO(data))
+        # Force-load (lazy decoder error catch + apply EXIF orientation)
+        try:
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+
+        # Only resize if either dimension exceeds the limit.
+        w, h = img.size
+        max_dim = s.image_max_dimension
+        if max(w, h) <= max_dim:
+            # Even if not resizing, we still rewrite to strip EXIF for
+            # privacy. The user uploaded a 1000×800 photo from their phone;
+            # we keep the pixels but drop the camera + GPS metadata.
+            stripped_io = io.BytesIO()
+            _save_image(img, mime, stripped_io, s.image_jpeg_quality)
+            stripped = stripped_io.getvalue()
+            # Only return the stripped version if it's actually smaller —
+            # otherwise the rewrite adds overhead with no payoff.
+            return stripped if len(stripped) < len(data) else data
+
+        # Resize: thumbnail preserves aspect ratio in-place.
+        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+        out = io.BytesIO()
+        _save_image(img, mime, out, s.image_jpeg_quality)
+        result = out.getvalue()
+        log.info("resized image %s: %d×%d → %d×%d, %d → %d bytes",
+                 mime, w, h, img.size[0], img.size[1], len(data), len(result))
+        return result
+
+    except Exception as e:
+        log.warning("image resize failed for %s (%d bytes): %s — storing original",
+                    mime, len(data), e)
+        return data
+
+
+def _save_image(img, mime: str, out: io.BytesIO, jpeg_quality: int) -> None:
+    """Write `img` to `out` in the codec matching `mime`. Drops metadata
+    (EXIF, ICC profiles, etc.) — `save` only includes what we explicitly
+    pass to `info`."""
+    if mime == "image/jpeg":
+        # JPEG can't have an alpha channel — convert if needed.
+        if img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGB")
+        img.save(out, format="JPEG", quality=jpeg_quality, optimize=True)
+    elif mime == "image/png":
+        img.save(out, format="PNG", optimize=True)
+    elif mime == "image/webp":
+        img.save(out, format="WEBP", quality=jpeg_quality, method=6)
+    else:
+        # Shouldn't reach here if _RESIZABLE_MIMES gate is honoured upstream
+        raise ValueError(f"unsupported resize target: {mime}")
 
 
 # Per RFC 6838, but pragmatic — we only accept what we have a story for.
@@ -219,6 +313,11 @@ def create_attachment(
     """
     verified_mime = validate_upload(data, mime, user_id=user_id, db=db)
     mime = verified_mime
+
+    # Downscale + strip EXIF before hashing/storing. The sha256 will be
+    # of the resized bytes so dedup works correctly (two uploads of the
+    # same photo from the same camera produce the same stored blob).
+    data = resize_image_if_large(data, mime)
 
     sha, full_path = store_blob(data, mime)
     rel_path = str(full_path.relative_to(_blob_dir()))

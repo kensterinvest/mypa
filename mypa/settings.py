@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     # Per-user upload rate. SlowAPI-formatted string.
     attachment_rate_limit: str = Field(default="20/hour")
 
+    # --- Image resize at ingest ---
+    # When True (default), JPEG/PNG/WebP uploads whose longest edge exceeds
+    # `image_max_dimension` are downscaled. EXIF metadata (including GPS!)
+    # is stripped during the resize. Saves disk + protects privacy.
+    # Set to False to store originals exactly as uploaded.
+    image_resize_enabled: bool = Field(default=True)
+    image_max_dimension: int = Field(default=2048)
+    image_jpeg_quality: int = Field(default=85)
+
     # --- Notifications (ntfy) ---
     ntfy_base_url: str = Field(default="")           # e.g. "https://ntfy.z-tidus.com"
     notify_scheduler_enabled: bool = Field(default=True)

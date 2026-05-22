@@ -14,6 +14,9 @@ os.environ.setdefault("NTFY_USER_MGMT_ENABLED", "false")
 os.environ["MAX_USER_BYTES"] = "5120"
 # Tight per-upload cap — 2KB
 os.environ["MAX_UPLOAD_BYTES"] = "2048"
+# Disable resize for these tests — they assert exact byte counts that
+# resize would otherwise rewrite. (Resize is covered by test_image_resize.)
+os.environ["IMAGE_RESIZE_ENABLED"] = "false"
 
 import pytest
 from sqlalchemy import text

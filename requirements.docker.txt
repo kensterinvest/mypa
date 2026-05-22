@@ -14,3 +14,4 @@ apscheduler>=3.10
 slowapi
 pyjwt[crypto]>=2.8
 python-multipart>=0.0.9
+Pillow>=10
