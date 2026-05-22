@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     image_max_dimension: int = Field(default=2048)
     image_jpeg_quality: int = Field(default=85)
 
+    # Refuse new uploads if the blob-dir partition has less than this much
+    # free space. Defends against the operator-pain scenario where a flood
+    # of uploads fills the disk and wedges the whole VPS. Default 1 GB.
+    min_free_disk_bytes: int = Field(default=1024 * 1024 * 1024)
+
     # --- Notifications (ntfy) ---
     ntfy_base_url: str = Field(default="")           # e.g. "https://ntfy.z-tidus.com"
     notify_scheduler_enabled: bool = Field(default=True)

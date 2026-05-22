@@ -11,8 +11,37 @@ from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from .. import attachments as att_lib
+from ..audit import audit
 from ..db import get_session
 from ..settings import settings
+
+
+# Chunk size for the streaming-read path — 64KB balances syscall count
+# vs RAM growth during read.
+_READ_CHUNK = 64 * 1024
+
+
+async def _read_upload_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """Read an UploadFile chunk-by-chunk, raising 413 the moment the
+    accumulated size exceeds the cap. Defends against a chunked
+    Transfer-Encoding upload that has no Content-Length header (and
+    would therefore bypass the pre-flight Content-Length check) by
+    refusing to buffer past the cap into RAM.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_READ_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"upload exceeded {max_bytes} bytes during read",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 router = APIRouter(tags=["attachments"])
@@ -80,7 +109,9 @@ async def upload_attachment(
     """
     _check_content_length(request)
     uid = _uid(request)
-    data = await file.read()
+    # Streaming read with size cap — defends even against chunked uploads
+    # that omit Content-Length (and would bypass _check_content_length).
+    data = await _read_upload_capped(file, settings().max_upload_bytes)
     mime = file.content_type or "application/octet-stream"
 
     try:
@@ -94,16 +125,33 @@ async def upload_attachment(
         )
     except ValueError as e:
         # validate_upload raises ValueError for size, magic-mismatch,
-        # quota. 413 for size-related, 415 for magic, 400 for the rest.
+        # quota, or insufficient disk. Map to appropriate HTTP code.
         msg = str(e)
         if "too large" in msg or "quota exceeded" in msg:
+            audit("attachment_upload", {"declared_mime": mime, "bytes": len(data)},
+                  f"413: {msg[:80]}", 1)
             raise HTTPException(status_code=413, detail=msg)
+        if "insufficient disk" in msg:
+            audit("attachment_upload", {"declared_mime": mime, "bytes": len(data)},
+                  f"507: {msg[:80]}", 1)
+            raise HTTPException(status_code=507, detail=msg)
         if "mismatch" in msg or "not allowed" in msg or "unrecognised" in msg:
+            audit("attachment_upload", {"declared_mime": mime, "bytes": len(data)},
+                  f"415: {msg[:80]}", 1)
             raise HTTPException(status_code=415, detail=msg)
+        audit("attachment_upload", {"declared_mime": mime, "bytes": len(data)},
+              f"400: {msg[:80]}", 1)
         raise HTTPException(status_code=400, detail=msg)
     except PermissionError as e:
+        audit("attachment_upload", {"declared_mime": mime, "bytes": len(data)},
+              "403: cross-tenant", 1)
         raise HTTPException(status_code=403, detail=str(e))
 
+    # Success audit — operator can grep this for usage patterns + abuse.
+    audit("attachment_upload",
+          {"id": att.id, "item_id": item_id, "mime": att.mime, "bytes": att.bytes,
+           "sha256_prefix": att.sha256[:12]},
+          f"ok id={att.id}")
     return {
         "id": att.id,
         "item_id": att.item_id,

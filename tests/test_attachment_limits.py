@@ -154,3 +154,17 @@ def test_create_attachment_uses_verified_mime(tmp_blob_dir):
             db, user_id=aid, data=PNG_BYTES, mime="image/png", item_id=item_id,
         )
     assert att.mime == "image/png"
+
+
+def test_disk_space_check_refuses_when_insufficient(tmp_blob_dir, monkeypatch):
+    """P2: refuse uploads if blob_dir partition has less than the min free.
+    Forces the cap absurdly high (10 TB) so any real filesystem fails it."""
+    aid, _ = _setup(tmp_blob_dir)
+    monkeypatch.setenv("MIN_FREE_DISK_BYTES", str(10 * 1024 ** 4))   # 10 TB
+    from mypa import settings as settings_mod
+    settings_mod._settings = None
+    Session = session_factory()
+    with Session() as db:
+        with pytest.raises(ValueError, match="insufficient disk space"):
+            att_lib.validate_upload(PNG_BYTES, "image/png", user_id=aid, db=db)
+    settings_mod._settings = None   # restore for other tests

@@ -141,5 +141,20 @@ async def bearer_auth_middleware(request: Request, call_next):
         )
 
     request.state.token_scope = scope
-    request.state.user_id = _user_id_from_token(auth_header)
+    user_id = _user_id_from_token(auth_header)
+    request.state.user_id = user_id
+
+    # Also publish the request context to audit.py's ContextVars so the
+    # REST surface can call audit() with the same user_id/scope tracking
+    # the MCP middleware already provides.
+    try:
+        from .audit import set_request_context
+        client_ip = (
+            request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (request.client.host if request.client else "?")
+        )
+        set_request_context(client_ip, scope.value if scope else "?", user_id=user_id)
+    except Exception:
+        pass
+
     return await call_next(request)

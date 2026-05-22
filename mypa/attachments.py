@@ -248,6 +248,22 @@ def validate_upload(
             f"user quota exceeded: {used} bytes used + {len(data)} new > limit {s.max_user_bytes}"
         )
 
+    # 5. System-wide free-disk check on the blob-dir partition. Cheap
+    #    statvfs call. Refuse rather than let the disk wedge the VPS.
+    try:
+        import shutil
+        usage = shutil.disk_usage(_blob_dir())
+        if usage.free < s.min_free_disk_bytes:
+            raise ValueError(
+                f"insufficient disk space: {usage.free} bytes free < "
+                f"required {s.min_free_disk_bytes}"
+            )
+    except FileNotFoundError:
+        # blob_dir doesn't exist yet — create_attachment creates it on
+        # first store. Skip the check, the actual write will surface
+        # any FS error.
+        pass
+
     return detected
 
 
