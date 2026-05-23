@@ -712,6 +712,34 @@ sudo bash setup.sh</code></pre>
   </details>
 
   <details>
+    <summary>What happens to my family photos when I save them?</summary>
+    <p>Phone photos (typically 5-10 MB at 4032×3024) are <strong>downscaled
+    to a 2048 px longest edge on upload</strong>, re-encoded at 85% JPEG
+    quality, and the EXIF metadata — including <em>GPS coordinates</em> —
+    is stripped. A 6 MB photo typically becomes ~700 KB. The image is
+    still high enough resolution to identify everything in the frame, just
+    not big enough to waste your VPS disk. If you'd rather store originals
+    exactly as uploaded, set <code>IMAGE_RESIZE_ENABLED=false</code>. The
+    operator can also tune <code>IMAGE_MAX_DIMENSION</code> +
+    <code>IMAGE_JPEG_QUALITY</code>.</p>
+  </details>
+
+  <details>
+    <summary>What protects my MyPA from being filled up?</summary>
+    <p>Five layers, each independently capable of refusing an oversized
+    or abusive upload:</p>
+    <ol>
+      <li>Caddy rejects uploads larger than 10 MB at the proxy.</li>
+      <li>FastAPI rejects them again from the <code>Content-Length</code> header.</li>
+      <li>A streaming read aborts immediately if the body exceeds the cap during transfer.</li>
+      <li>Magic-byte validation refuses bytes that don't match a real image / PDF / audio format — clients can't lie about <code>Content-Type</code>.</li>
+      <li>A 1 GB-per-user lifetime quota stops a compromised account from filling the disk. The system also refuses uploads when the disk has &lt; 1 GB free.</li>
+    </ol>
+    <p>Every attempt — success or failure — is written to the audit log.
+    All knobs are env-tunable per install.</p>
+  </details>
+
+  <details>
     <summary>What about a Raspberry Pi?</summary>
     <p>Pi 4 (2 GB+) or Pi 5 runs MyPA comfortably. Use the Docker path or
     the bare-metal <code>setup.sh</code> on Raspberry Pi OS / Ubuntu Server

@@ -92,8 +92,61 @@ sudo -u mypa bash -c "set -a; source /etc/mypa/env; set +a; cd /opt/mypa; \
 | `oauth_register_client.py <name> <redirect_uri>` | Pre-register an OAuth client (skips DCR). Returns `client_id` + `client_secret`. Useful for trusted out-of-band integrations. | no |
 | `snapshot.py` | Force an immediate `VACUUM INTO` backup snapshot. (Nightly cron handles this automatically.) | yes |
 | `verify_snapshot.py <path-to-snapshot.db>` | Open a snapshot with the SQLCipher key and confirm row counts match the live DB. Sanity check for disaster-recovery rehearsals. | yes |
+| `backup_secrets.sh` | Create a fresh openssl-encrypted bundle of `/etc/mypa/env` at `/srv/backups/secrets/secrets-YYYY-MM-DD.tar.gz.enc`. Generates and PRINTS the bundle password ONCE — save it. Old bundles stay in place until you delete them. | yes |
 
 The scripts that need a fresh ntfy account (`add_user.py`, `change_password.py` with rotate effect, etc.) shell out to `ntfy user add`/`access` via the narrow sudoers entry `/etc/sudoers.d/mypa-ntfy`. If ntfy management is disabled (env `NTFY_USER_MGMT_ENABLED=false`, or no ntfy server present), the ntfy calls become no-ops and the script still succeeds — your archive just won't push.
+
+---
+
+## Attachment limits &amp; image handling
+
+MyPA's `POST /api/attachments` accepts image / PDF / audio uploads. Five
+layers of defence protect against oversized, malformed, or abusive
+uploads:
+
+| Layer | Where | What it stops |
+|---|---|---|
+| `request_body { max_size 10MB }` on `/api/attachments*` | Caddy | Oversize at the proxy — bytes never reach mypa-api |
+| `Content-Length` pre-check | FastAPI route | Same cap if Caddy is bypassed |
+| Streaming-read with byte-level cap | FastAPI route | Chunked uploads with no `Content-Length` |
+| `validate_upload` | service layer | Magic-byte signature mismatch, disallowed MIME, per-user quota, free-disk floor |
+| Per-(user&#124;IP) rate limit | `slowapi` | Sustained abuse / slow exfiltration |
+
+After validation passes, JPEG / PNG / WebP uploads are downscaled if
+their longest edge exceeds `IMAGE_MAX_DIMENSION` (default 2048 px) and
+EXIF metadata (including GPS coordinates) is stripped during the
+re-encode. GIF (potentially animated) and HEIC (needs `pillow-heif`)
+are stored as-is. PDF and audio are never touched.
+
+### Env-tunable knobs
+
+All of these can be overridden in `/etc/mypa/env` (bare-metal) or
+`docker/.env` (Docker):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `MAX_UPLOAD_BYTES` | `10485760` (10 MB) | Per-upload byte cap. Match Caddy's `request_body max_size` if you raise this. |
+| `MAX_USER_BYTES` | `1073741824` (1 GB) | Lifetime byte cap per user. |
+| `ATTACHMENT_RATE_LIMIT` | `20/hour` | SlowAPI-formatted; e.g. `5/minute`, `100/day`. |
+| `MIN_FREE_DISK_BYTES` | `1073741824` (1 GB) | Refuse uploads when the partition holding `blob_dir` has less than this much free. Returns HTTP 507. |
+| `IMAGE_RESIZE_ENABLED` | `true` | Set `false` to store originals exactly as uploaded (skips downscale + EXIF strip). |
+| `IMAGE_MAX_DIMENSION` | `2048` | Longest edge in pixels. Phone photos at 4032×3024 → 2048×1536 (~85% disk saving). |
+| `IMAGE_JPEG_QUALITY` | `85` | Re-encode quality for JPEG and WebP. PNG ignores this. |
+
+### What gets audit-logged
+
+Every attachment-upload attempt (success or failure) writes a single
+JSON line to `$AUDIT_LOG_PATH` (default `/var/log/mypa-mcp.log`):
+
+```
+ts user_id=N attachment_upload args={id, item_id, mime, bytes, sha256_prefix} → ok id=N
+ts user_id=N attachment_upload args={declared_mime, bytes} → 413: quota exceeded
+ts user_id=N attachment_upload args={declared_mime, bytes} → 415: magic-byte mismatch
+ts user_id=N attachment_upload args={declared_mime, bytes} → 507: insufficient disk
+ts user_id=N attachment_upload args={declared_mime, bytes} → 403: cross-tenant
+```
+
+Operator can grep by user, outcome, or mime to spot abuse patterns.
 
 ---
 
