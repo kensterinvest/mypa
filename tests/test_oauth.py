@@ -189,6 +189,58 @@ def test_wrong_password_re_renders_form():
     assert "Wrong email or password" in r.text
 
 
+def test_authorize_form_escapes_injected_values():
+    """Regression: the consent/login form must HTML-escape attacker-controllable
+    values (stored client_name, reflected state) so no <script> executes on
+    MyPA's origin. Guards against the credential-phishing XSS (P0-1)."""
+    c = _client()
+    Session = session_factory()
+    with Session() as db:
+        creds = oauth_lib.register_client(
+            db,
+            name="<script>alert('xss')</script>",
+            redirect_uris=["https://claude.ai/cb"],
+        )
+
+    verifier = secrets.token_urlsafe(64)
+    challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
+    evil_state = '"><script>steal()</script>'
+
+    r = c.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": creds["client_id"],
+            "redirect_uri": "https://claude.ai/cb",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "scope": "mypa:read mypa:write",
+            "state": evil_state,
+        },
+    )
+    assert r.status_code == 200
+    # Raw payloads must NOT appear unescaped...
+    assert "<script>alert('xss')</script>" not in r.text
+    assert "<script>steal()</script>" not in r.text
+    # ...and their escaped forms MUST be present (proves they were rendered, escaped).
+    assert "&lt;script&gt;alert(" in r.text
+    assert "&lt;script&gt;steal()" in r.text
+
+
+def test_register_caps_client_name_length():
+    """Defense-in-depth: an over-long client_name is truncated, not stored whole."""
+    c = _client()
+    r = c.post(
+        "/oauth/register",
+        json={
+            "client_name": "A" * 5000,
+            "redirect_uris": ["https://claude.ai/cb"],
+        },
+    )
+    assert r.status_code == 201
+    assert len(r.json()["client_name"]) <= 200
+
+
 def test_dynamic_client_registration():
     c = _client()
     r = c.post(

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import hmac
+import html
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -105,7 +106,19 @@ _LOGIN_FORM = """<!doctype html>
 
 
 def _render_form(**kw) -> HTMLResponse:
-    return HTMLResponse(content=_LOGIN_FORM.format(**kw))
+    # SECURITY: HTML-escape every interpolated value. client_name is
+    # attacker-controllable (stored via DCR /oauth/register); state, scope,
+    # redirect_uri, code_challenge are reflected straight from the request.
+    # Without this an attacker can inject <script> onto MyPA's own origin and
+    # phish the password typed into this very form. error_block is
+    # server-generated trusted HTML and must stay raw. quote=True closes the
+    # hidden-input value="..." attribute context too. Note: str.format does not
+    # re-parse substituted values, so escaped values cannot reintroduce braces.
+    safe = {
+        k: v if k == "error_block" else html.escape(str(v), quote=True)
+        for k, v in kw.items()
+    }
+    return HTMLResponse(content=_LOGIN_FORM.format(**safe))
 
 
 @router.get("/oauth/authorize")
@@ -354,7 +367,8 @@ async def register_endpoint(
                 status_code=400,
             )
 
-    name = body.get("client_name") or "Unnamed client"
+    # Coerce to str and cap length — defense-in-depth on top of output escaping.
+    name = str(body.get("client_name") or "Unnamed client")[:200]
     scopes = body.get("scope") or "mypa:read mypa:write"
 
     client = oauth_lib.register_client(
