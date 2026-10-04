@@ -75,6 +75,7 @@ class ReminderCreate(BaseModel):
     fire_at: datetime
     message: str | None = None
     channel: str = "ntfy"
+    repeat: str | None = None
 
 
 class ReminderOut(BaseModel):
@@ -86,6 +87,7 @@ class ReminderOut(BaseModel):
     fired_at: datetime | None
     channel: str
     message: str | None
+    repeat: str | None = None
 
     @field_validator("fire_at", "fired_at")
     @classmethod

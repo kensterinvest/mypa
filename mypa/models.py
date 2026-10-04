@@ -86,6 +86,10 @@ class Reminder(Base):
     # never blocks the queue.
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text)
+    # Repeating reminders (migration 011): after each send, fire_at moves
+    # to the next occurrence of `repeat`, computed from repeat_anchor.
+    repeat: Mapped[str | None] = mapped_column(String(64))
+    repeat_anchor: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     item: Mapped[Item] = relationship(back_populates="reminders")
 

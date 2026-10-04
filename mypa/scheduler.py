@@ -1,6 +1,6 @@
 """APScheduler-driven notification dispatcher.
 
-Three jobs run continuously inside mypa-api:
+Four jobs run continuously inside mypa-api:
 
 1. dispatch_reminders — scans the `reminders` table every 60s for rows
    where fire_at <= now AND fired_at IS NULL, dispatches a push for
@@ -19,6 +19,13 @@ Comparing raw strings is wrong: ' ' sorts before 'T'.
 3. dispatch_overdue_weekly — same pattern, once a week on the user's
    overdue_day/overdue_hour: lists open items that are past due.
 
+4. dispatch_expiry_alerts — at the user's digest hour, warns 30 / 7 / 1
+   days before a contract, warranty, passport… ends (any item whose
+   data{} has an end/expiry date — see EXPIRY_KEYS).
+
+Repeating reminders aren't closed out after sending: fire_at moves to
+the next occurrence (recurrence.py).
+
 Both jobs are user-scoped: they pull each row's user_id, then resolve
 that user's topic and prefs. No cross-tenant leak possible.
 """
@@ -26,17 +33,17 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import text
 
-from . import notifier
+from . import notifier, recurrence
 from .db import session_factory
 from .settings import settings
-from .timeutil import db_ts, safe_zone
+from .timeutil import as_utc, db_ts, safe_zone
 
 
 log = logging.getLogger(__name__)
@@ -59,6 +66,7 @@ def _load_prefs(prefs_raw: str | None) -> dict:
     defaults = {
         "realtime": True, "digest_enabled": True, "digest_hour": 7,
         "overdue_weekly_enabled": False, "overdue_day": 0, "overdue_hour": 9,
+        "expiry_alerts": True,
     }
     try:
         defaults.update(json.loads(prefs_raw) if prefs_raw else {})
@@ -76,7 +84,7 @@ def dispatch_reminders() -> int:
     with SessionLocal() as db:
         rows = db.execute(text(
             "SELECT r.id, r.item_id, r.user_id, r.fire_at, r.message, i.title, i.kind, "
-            "r.attempts "
+            "r.attempts, r.repeat, r.repeat_anchor "
             "FROM reminders r LEFT JOIN items i ON r.item_id = i.id "
             "WHERE r.fired_at IS NULL AND julianday(r.fire_at) <= julianday(:now) "
             "ORDER BY julianday(r.fire_at) ASC LIMIT 100"
@@ -84,15 +92,33 @@ def dispatch_reminders() -> int:
         if not rows:
             return 0
 
-        def close_out(rid: int, reason: str | None) -> None:
+        # Cache user settings within one tick
+        user_settings: dict[int, dict] = {}
+
+        def close_out(rid: int, reason: str | None, repeat=None, anchor=None,
+                      fire_at=None, user_id=None) -> None:
+            """Done with this occurrence. One-off: mark fired. Repeating:
+            move fire_at to the next occurrence after now."""
+            if repeat:
+                tz = _user_tz((user_settings.get(user_id) or {}).get("tz") or "Etc/UTC")
+                try:
+                    start = as_utc(datetime.fromisoformat(str(anchor or fire_at)))
+                    nxt = recurrence.next_occurrence(repeat, start, _now_utc(), tz)
+                except ValueError:
+                    nxt = None
+                if nxt is not None:
+                    db.execute(text(
+                        "UPDATE reminders SET fire_at = :f, attempts = 0, last_error = :e "
+                        "WHERE id = :i"
+                    ), {"f": db_ts(nxt), "e": reason, "i": rid})
+                    return
             db.execute(text(
                 "UPDATE reminders SET fired_at = :now, last_error = :e WHERE id = :i"
             ), {"now": db_ts(_now_utc()), "e": reason, "i": rid})
 
-        # Cache user settings within one tick
-        user_settings: dict[int, dict] = {}
         for r in rows:
-            rid, item_id, user_id, fire_at, msg, title, kind, attempts = r
+            rid, item_id, user_id, fire_at, msg, title, kind, attempts, repeat, anchor = r
+            occurrence = dict(repeat=repeat, anchor=anchor, fire_at=fire_at, user_id=user_id)
             if user_id is None:
                 close_out(rid, "skipped: no user")
                 continue
@@ -108,10 +134,10 @@ def dispatch_reminders() -> int:
                 close_out(rid, "skipped: user not found")
                 continue
             if not us.get("topic"):
-                close_out(rid, "skipped: no notify topic")
+                close_out(rid, "skipped: no notify topic", **occurrence)
                 continue
             if not us["prefs"].get("realtime", True):
-                close_out(rid, "skipped: realtime notifications off")
+                close_out(rid, "skipped: realtime notifications off", **occurrence)
                 continue
 
             body = msg or f"Reminder: {title or '(no title)'}"
@@ -123,10 +149,11 @@ def dispatch_reminders() -> int:
                 tags=["bell"],
             )
             if ok:
-                close_out(rid, None)
+                close_out(rid, None, **occurrence)
                 fired += 1
             elif (attempts or 0) + 1 >= MAX_REMINDER_ATTEMPTS:
-                close_out(rid, f"failed: publish failed {MAX_REMINDER_ATTEMPTS} times")
+                close_out(rid, f"failed: publish failed {MAX_REMINDER_ATTEMPTS} times",
+                          **occurrence)
                 log.warning("dispatch_reminders: giving up on reminder %s", rid)
             else:
                 db.execute(text(
@@ -293,6 +320,103 @@ def dispatch_overdue_weekly() -> int:
     return sent
 
 
+# data{} keys that hold an end / expiry / renewal date.
+EXPIRY_KEYS = ("end", "end_date", "ends", "expires", "expires_at", "expiry",
+               "expiry_date", "renew_at", "renewal_date", "valid_until")
+EXPIRY_THRESHOLDS = (30, 7, 1)  # days before
+
+
+def _parse_end_date(value) -> date | None:
+    """'2027-05-01', '2027-05-01T…' or '2027-05' (→ 1st of month, the
+    conservative reading of "ends May 2027")."""
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    try:
+        return date.fromisoformat(v[:10])
+    except ValueError:
+        pass
+    try:
+        return date.fromisoformat(v[:7] + "-01") if len(v) == 7 else None
+    except ValueError:
+        return None
+
+
+def _snippet(body: str | None, limit: int = 140) -> str:
+    """First line of prose from a markdown body (skips headings)."""
+    for line in (body or "").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            return line if len(line) <= limit else line[: limit - 1] + "…"
+    return ""
+
+
+def dispatch_expiry_alerts() -> int:
+    """At each user's digest hour, push "ends in N days" for open items
+    whose data{} has an end date (EXPIRY_KEYS) within 30 / 7 / 1 days.
+    Each threshold fires once per (item, end date); an item first seen
+    inside a window gets one push, not one per threshold.
+    """
+    sent = 0
+    now_utc = _now_utc()
+    SessionLocal = session_factory()
+    with SessionLocal() as db:
+        users = db.execute(text(
+            "SELECT id, tz, notify_topic, notify_prefs "
+            "FROM users WHERE disabled_at IS NULL AND notify_topic IS NOT NULL"
+        )).fetchall()
+        for uid, tz_name, topic, prefs_raw in users:
+            prefs = _load_prefs(prefs_raw)
+            if not prefs.get("expiry_alerts", True):
+                continue
+            local = now_utc.astimezone(_user_tz(tz_name or "Etc/UTC"))
+            if local.hour != int(prefs.get("digest_hour", 7)):
+                continue
+            today = local.date()
+            items = db.execute(text(
+                "SELECT id, kind, title, body, data FROM items "
+                "WHERE user_id = :u AND status = 'open' AND data IS NOT NULL AND data != '{}'"
+            ), {"u": uid}).fetchall()
+            for item_id, kind, title, body, data_raw in items:
+                try:
+                    data = json.loads(data_raw) if isinstance(data_raw, str) else (data_raw or {})
+                except json.JSONDecodeError:
+                    continue
+                end = next((d for d in (_parse_end_date(data.get(k)) for k in EXPIRY_KEYS) if d), None)
+                if end is None:
+                    continue
+                days_left = (end - today).days
+                due = [t for t in EXPIRY_THRESHOLDS if 0 <= days_left <= t]
+                if not due:
+                    continue
+                already = {row[0] for row in db.execute(text(
+                    "SELECT days FROM expiry_alerts WHERE item_id = :i AND end_date = :e"
+                ), {"i": item_id, "e": end.isoformat()})}
+                if all(t in already for t in due):
+                    continue
+                when = {0: "today", 1: "tomorrow"}.get(days_left, f"in {days_left} days")
+                note = _snippet(body)
+                ok = notifier.publish(
+                    topic,
+                    title=f"MyPA — {kind} ends {when}",
+                    message=f"{title} (ends {end.isoformat()})" + (f"\n{note}" if note else ""),
+                    priority=4 if days_left <= 7 else 3,
+                    tags=["calendar"],
+                )
+                if not ok:
+                    continue
+                for t in due:
+                    db.execute(text(
+                        "INSERT OR IGNORE INTO expiry_alerts (item_id, end_date, days, sent_at) "
+                        "VALUES (:i, :e, :d, :s)"
+                    ), {"i": item_id, "e": end.isoformat(), "d": t, "s": now_utc.isoformat()})
+                sent += 1
+        db.commit()
+    if sent:
+        log.info("dispatch_expiry_alerts: sent %d", sent)
+    return sent
+
+
 def start_scheduler() -> BackgroundScheduler | None:
     """Boot the APScheduler with both jobs. Called from main.py lifespan.
     Idempotent — returns existing scheduler if already started.
@@ -311,6 +435,8 @@ def start_scheduler() -> BackgroundScheduler | None:
                   id="dispatch_digests", max_instances=1, coalesce=True)
     sched.add_job(dispatch_overdue_weekly, IntervalTrigger(seconds=60),
                   id="dispatch_overdue_weekly", max_instances=1, coalesce=True)
+    sched.add_job(dispatch_expiry_alerts, IntervalTrigger(seconds=60),
+                  id="dispatch_expiry_alerts", max_instances=1, coalesce=True)
     sched.start()
     _scheduler = sched
     log.info("notification scheduler started")

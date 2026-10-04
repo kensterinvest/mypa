@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from .models import Item, Reminder
 from .schemas import ItemCreate, ItemPatch
-from .timeutil import to_utc, user_tz_name
+from . import recurrence
+from .timeutil import as_utc, safe_zone, to_utc, user_tz_name
 
 
 def _tags_to_str(tags: list[str] | None) -> str:
@@ -273,15 +274,62 @@ def update_item(db: Session, item_id: int, patch: ItemPatch, user_id: int | None
 
 
 def complete_item(db: Session, item_id: int, user_id: int | None = None) -> Item | None:
+    return complete_item_with_next(db, item_id, user_id=user_id)[0]
+
+
+def item_repeat_rule(item: Item) -> str | None:
+    """Recurring todos carry their rule in data.repeat (data.recurring is
+    accepted too — the 'date' kind's example uses it)."""
+    data = item.data or {}
+    rule = data.get("repeat") or data.get("recurring")
+    return rule if isinstance(rule, str) and rule.strip() else None
+
+
+def complete_item_with_next(
+    db: Session, item_id: int, user_id: int | None = None,
+) -> tuple[Item | None, Item | None]:
+    """Mark an item done. If it's a recurring item with a due date, also
+    create the next open occurrence, due at the next date after
+    max(old due, now) — finishing "pay cleaner every 2 weeks" late
+    doesn't produce an already-overdue copy. Returns (done, next)."""
     item = get_item(db, item_id, user_id=user_id)
     if item is None:
-        return None
+        return None, None
+    if item.status == "done":
+        return item, None  # already done: don't spawn a second next occurrence
+    now = datetime.now(timezone.utc)
     item.status = "done"
-    item.completed_at = datetime.now(timezone.utc)
-    item.updated_at = item.completed_at
+    item.completed_at = now
+    item.updated_at = now
+
+    nxt = None
+    rule = item_repeat_rule(item)
+    if rule and item.due_at is not None:
+        try:
+            recurrence.parse_rule(rule)
+        except ValueError:
+            rule = None
+    if rule and item.due_at is not None:
+        tz = safe_zone(user_tz_name(db, user_id if user_id is not None else item.user_id))
+        due = as_utc(item.due_at)
+        anchor_raw = (item.data or {}).get("repeat_anchor")
+        try:
+            anchor = as_utc(datetime.fromisoformat(anchor_raw)) if anchor_raw else due
+        except ValueError:
+            anchor = due
+        next_due = recurrence.next_occurrence(rule, anchor, max(due, now), tz)
+        nxt = Item(
+            user_id=item.user_id, kind=item.kind, title=item.title, body=item.body,
+            status="open", priority=item.priority, due_at=next_due.astimezone(timezone.utc),
+            tags=item.tags, data={**(item.data or {}), "repeat_anchor": anchor.isoformat()},
+            source=item.source,
+        )
+        db.add(nxt)
     db.commit()
     db.refresh(item)
-    return item
+    if nxt is not None:
+        db.refresh(nxt)
+    return item, nxt
 
 
 def delete_item(db: Session, item_id: int, user_id: int | None = None) -> bool:
@@ -295,13 +343,20 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> bool:
 
 def add_reminder(
     db: Session, item_id: int, fire_at: datetime, message: str | None = None,
-    channel: str = "ntfy", user_id: int | None = None,
+    channel: str = "ntfy", user_id: int | None = None, repeat: str | None = None,
 ) -> Reminder | None:
+    """Schedule a reminder. `repeat` (see recurrence.py) makes it recur:
+    after each send it moves to the next occurrence. Raises ValueError
+    for an unknown rule."""
+    if repeat:
+        repeat = recurrence.normalize_rule(repeat)
     item = get_item(db, item_id, user_id=user_id)
     if item is None:
         return None
     fire_at = to_utc(fire_at, user_tz_name(db, user_id))
-    r = Reminder(item_id=item_id, user_id=user_id, fire_at=fire_at, message=message, channel=channel)
+    r = Reminder(item_id=item_id, user_id=user_id, fire_at=fire_at, message=message,
+                 channel=channel, repeat=repeat or None,
+                 repeat_anchor=fire_at if repeat else None)
     db.add(r)
     db.commit()
     db.refresh(r)
@@ -362,8 +417,10 @@ def undo_last(db: Session, source: str | None = None, user_id: int | None = None
 
 DEFAULT_KINDS: dict[str, dict[str, Any]] = {
     "todo": {
-        "description": "Action with optional due date.",
-        "example_data": {"project": "string", "blocked_by": "item id"},
+        "description": "Action with optional due date. Set data.repeat "
+                       "(e.g. 'weekly', 'every 2 weeks') + due_at to make it recurring: "
+                       "completing it creates the next one.",
+        "example_data": {"project": "string", "blocked_by": "item id", "repeat": "weekly"},
     },
     "reminder": {
         "description": "Simple alert at a specific time.",
@@ -394,7 +451,8 @@ DEFAULT_KINDS: dict[str, dict[str, Any]] = {
         "example_data": {"category": "string"},
     },
     "contract": {
-        "description": "Service contract with renewal date.",
+        "description": "Service contract with renewal date. data.end (ISO date) "
+                       "triggers push alerts 30/7/1 days before it ends.",
         "example_data": {
             "provider": "string",
             "contract_id": "string",
@@ -404,8 +462,10 @@ DEFAULT_KINDS: dict[str, dict[str, Any]] = {
         },
     },
     "subscription": {
-        "description": "Recurring paid service.",
-        "example_data": {"provider": "string", "plan": "string", "monthly_cost": "number"},
+        "description": "Recurring paid service. data.renew_at (ISO date) triggers "
+                       "renewal alerts.",
+        "example_data": {"provider": "string", "plan": "string", "monthly_cost": "number",
+                         "renew_at": "iso date"},
     },
     "account": {
         "description": "Online service account info (non-secret; keep passwords in your password manager).",

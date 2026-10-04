@@ -61,7 +61,7 @@ def _apply_oauth_schema():
     eng = db.engine()
     for fname in ("002_oauth.sql", "003_users.sql", "005_notifications.sql",
                   "006_ntfy_token.sql", "007_refresh_token_rotation.sql",
-                  "009_weekly_overdue.sql"):
+                  "009_weekly_overdue.sql", "011_recurrence_expiry.sql"):
         sql_path = Path(__file__).parent.parent / "migrations" / fname
         sql = sql_path.read_text(encoding="utf-8")
         with eng.begin() as conn:

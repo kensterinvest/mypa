@@ -150,6 +150,7 @@ Available fields:
 | `overdue_weekly_enabled` | bool | `false` | Weekly catch-up listing open-but-overdue todos |
 | `overdue_day` | int 0-6 | `0` (Sun) | Day of week for the weekly catch-up |
 | `overdue_hour` | int 0-23 | `9` | Hour of day for the weekly catch-up |
+| `expiry_alerts` | bool | `true` | Pushes 30 / 7 / 1 days before a contract, warranty, passport… ends (sent at `digest_hour`) |
 
 ### 6. If your credentials leak
 
@@ -384,26 +385,27 @@ The user should subscribe to their topic in the ntfy mobile app (see
 
 ## How dispatch works
 
-Two APScheduler jobs run inside `mypa-api` every 60 seconds:
+Four APScheduler jobs run inside `mypa-api` every 60 seconds:
 
 | Job | What |
 |---|---|
-| `dispatch_reminders` | Scans `reminders` where `fire_at <= now() AND fired_at IS NULL`. For each row: resolve the user's topic + prefs, skip if `realtime: false`, publish to ntfy, mark `fired_at`. |
+| `dispatch_reminders` | Scans `reminders` where `fire_at <= now() AND fired_at IS NULL`. For each row: resolve the user's topic + prefs, skip if `realtime: false`, publish to ntfy. One-off reminders get `fired_at` set; **repeating** ones (`repeat` = daily / weekly / "every 2 weeks" / yearly …) move `fire_at` to the next occurrence, computed in the user's TZ from the first one. Rows that can't be sent (no topic, realtime off) are closed out with `last_error` rather than left to clog the queue; failed publishes retry up to 5 times. |
 | `dispatch_digests` | For each user with `disabled_at IS NULL AND notify_topic IS NOT NULL`: compute current hour in their TZ, if equal to `digest_hour` AND `last_digest_at` is before today-in-user-TZ-00:00, build a digest of items due today + overdue count + named events, publish, update `last_digest_at`. |
+| `dispatch_overdue_weekly` | When `now in user_tz` matches `(overdue_day, overdue_hour)` and it hasn't fired that day: lists open items past their due date. Silent when nothing is overdue. |
+| `dispatch_expiry_alerts` | At `digest_hour`: for open items whose `data{}` has an end date (`end`, `expires`, `renew_at`, `valid_until`, …), push "ends in N days" at 30 / 7 / 1 days out. Each threshold fires once per (item, end date) — tracked in `expiry_alerts` — so a renewed contract alerts again. |
 
-The weekly overdue job is in the same loop; it fires when `now in user_tz`
-matches `(overdue_day, overdue_hour)` and the previous fire is more than
-6 days old.
+All time comparisons use SQLite `julianday()`, which normalizes every
+stored timestamp format to UTC.
 
 ### Scope guarantees
 
-- Every query in both jobs has an explicit `user_id` predicate.
+- Every query in every job has an explicit `user_id` predicate.
 - A user's reminder can only push to that user's `notify_topic` — the row's `user_id` is resolved to the user, then to their topic, with no cross-row leakage.
 - Multi-tenant isolation tests verify this (see `tests/test_notifications.py::test_dispatch_reminders_fires_due_and_marks_fired_at`).
 
 ### What happens if mypa-api is down
 
-- Reminders queued in DB are not lost — when mypa-api restarts, `dispatch_reminders` catches up on any `fire_at <= now` rows.
+- Reminders queued in DB are not lost — when mypa-api restarts, `dispatch_reminders` catches up on any `fire_at <= now` rows. A repeating reminder sends once for the missed time, then resumes its schedule (no burst of missed occurrences).
 - Digests are not retroactive — if mypa-api was down at your `digest_hour`, you don't get a delayed digest. (We considered surfacing missed digests on next-run but decided "yesterday's morning summary at 19:00" is worse than "no summary today.")
 
 ---

@@ -217,7 +217,8 @@ def get_notify_settings(db: Session, user_id: int) -> dict:
 
 
 NOTIFY_PREF_KEYS = {"tz", "realtime", "digest_enabled", "digest_hour",
-                    "overdue_weekly_enabled", "overdue_day", "overdue_hour"}
+                    "overdue_weekly_enabled", "overdue_day", "overdue_hour",
+                    "expiry_alerts"}
 
 
 def validate_notify_prefs(patch: dict) -> dict:
@@ -245,7 +246,7 @@ def validate_notify_prefs(patch: dict) -> dict:
                 raise ValueError(f"{key} must be an integer {label}")
             if not 0 <= out[key] <= hi:
                 raise ValueError(f"{key} must be {label}")
-    for key in ("realtime", "digest_enabled", "overdue_weekly_enabled"):
+    for key in ("realtime", "digest_enabled", "overdue_weekly_enabled", "expiry_alerts"):
         if key in out:
             out[key] = bool(out[key])
     return out

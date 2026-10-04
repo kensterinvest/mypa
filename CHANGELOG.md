@@ -77,6 +77,24 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `scripts/apply_migrations.py` now splits SQL with SQLite's own parser
   (`mypa/migrate.py`), so triggers and `;` inside strings work.
 
+### Added — recurrence and expiry alerts
+- **Repeating reminders**: `pa_add_reminder(..., repeat="every 2 weeks")`
+  (also daily, weekdays, weekly, fortnightly, monthly, quarterly, yearly,
+  every N days/weeks/months/years). Occurrences are computed in the
+  user's tz from the first one, so 9am stays 9am across DST and "monthly
+  on the 31st" doesn't drift. After downtime, a repeating reminder sends
+  once and resumes — no burst of missed occurrences.
+- **Recurring todos**: a todo with `data.repeat` and a `due_at` creates
+  its next occurrence when completed (`pa_complete` returns
+  `next_occurrence`). Completing late never creates an already-overdue copy.
+- **Expiry alerts**: pushes 30 / 7 / 1 days before any open item's
+  `data` end date (`end`, `expires`, `renew_at`, `valid_until`, …) —
+  contracts, warranties, passports. Includes the first line of the
+  item's notes. Once per threshold per end date; renewing re-arms.
+  New pref `expiry_alerts` (default on).
+- Migration `011_recurrence_expiry.sql` adds `reminders.repeat`,
+  `reminders.repeat_anchor` and the `expiry_alerts` table.
+
 ### Changed — MCP endpoint
 - **Canonical MCP URL is now `https://<host>/mcp`** (Streamable HTTP).
   The old `https://<host>/mcp/sse` URL always spoke Streamable HTTP

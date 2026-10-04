@@ -85,6 +85,7 @@ def _serialize_reminder(r) -> dict:
         "fire_at": iso(r.fire_at),
         "message": r.message,
         "channel": r.channel,
+        "repeat": r.repeat,
     }
 
 
@@ -416,6 +417,10 @@ def pa_update(
 def pa_complete(item_id: int) -> dict:
     """Mark an item as done. Sets status='done' and completed_at=now.
 
+    Recurring todos (data.repeat set, e.g. "weekly", plus a due_at) get
+    their next occurrence created automatically — returned as
+    `next_occurrence`; tell the user when it's next due.
+
     Use when the user says "I did X", "X is done", "completed X", "finished X",
     "mark X as done", or anything that signals an open todo / task is now complete.
     """
@@ -423,16 +428,22 @@ def pa_complete(item_id: int) -> dict:
         return denied
     Session = session_factory()
     with Session() as db:
-        item = service.complete_item(db, item_id, user_id=current_user_id())
+        item, nxt = service.complete_item_with_next(db, item_id, user_id=current_user_id())
     if item is None:
         audit("pa_complete", {"item_id": item_id}, "not found", 1)
         return {"error": "not found", "item_id": item_id}
-    audit("pa_complete", {"item_id": item_id}, "completed")
-    return _serialize(item)
+    audit("pa_complete", {"item_id": item_id},
+          f"completed; next id={nxt.id}" if nxt else "completed")
+    result = _serialize(item)
+    if nxt is not None:
+        result["next_occurrence"] = _serialize(nxt)
+    return result
 
 
 @mcp.tool()
-def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> dict:
+def pa_add_reminder(
+    item_id: int, fire_at: str, message: str | None = None, repeat: str | None = None,
+) -> dict:
     """Schedule a push notification for an item. Delivered through ntfy
     to the user's phone at `fire_at` (if they've subscribed — see
     pa_get_notify_prefs). The reminder needs an item: pa_add first
@@ -442,27 +453,36 @@ def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> d
     without one it's read as the user's local time.
     Use when the user says "remind me", "alert me", "tell me at", "ping me".
     To snooze or move a reminder: pa_cancel_reminder, then add a new one.
+
+    `repeat` makes it recur from `fire_at`: daily, weekdays, weekly,
+    fortnightly, monthly, quarterly, yearly, or "every N days/weeks/
+    months/years". E.g. "remind me to pay the cleaner every 2nd Friday"
+    → fire_at=<next Friday 09:00>, repeat="every 2 weeks"; birthdays →
+    repeat="yearly". Monthly on the 31st falls back to the month's last day.
     """
     if (denied := _deny_if_read_only("pa_add_reminder")):
         return denied
+    Session = session_factory()
     try:
         when = parse_iso(fire_at, "fire_at")
+        with Session() as db:
+            r = service.add_reminder(
+                db, item_id=item_id,
+                fire_at=when,
+                message=message,
+                channel="ntfy",
+                user_id=current_user_id(),
+                repeat=repeat,
+            )
+            result = _serialize_reminder(r) if r is not None else None
     except ValueError as e:
+        audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, f"rejected: {e}", 1)
         return {"error": str(e)}
-    Session = session_factory()
-    with Session() as db:
-        r = service.add_reminder(
-            db, item_id=item_id,
-            fire_at=when,
-            message=message,
-            channel="ntfy",
-            user_id=current_user_id(),
-        )
-        if r is None:
-            audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, "item not found", 1)
-            return {"error": "item not found", "item_id": item_id}
-        audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, f"reminder id={r.id}")
-        result = _serialize_reminder(r)
+    if result is None:
+        audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, "item not found", 1)
+        return {"error": "item not found", "item_id": item_id}
+    audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at},
+          f"reminder id={result['reminder_id']}")
     return result
 
 
@@ -616,6 +636,7 @@ def pa_set_notify_prefs(
     overdue_weekly_enabled: bool | None = None,
     overdue_day: int | None = None,
     overdue_hour: int | None = None,
+    expiry_alerts: bool | None = None,
 ) -> dict:
     """Update notification preferences. Only fields you pass get changed.
 
@@ -629,6 +650,8 @@ def pa_set_notify_prefs(
       - digest_enabled / digest_hour: daily morning summary (0-23 in user's TZ).
       - overdue_weekly_enabled / overdue_day (0=Sun..6=Sat) / overdue_hour:
         weekly catch-up listing overdue todos.
+      - expiry_alerts: True/False — pushes 30/7/1 days before a contract,
+        warranty, passport… ends (sent at digest_hour).
     """
     if (denied := _deny_if_read_only("pa_set_notify_prefs")):
         return denied
@@ -644,6 +667,7 @@ def pa_set_notify_prefs(
     if overdue_weekly_enabled is not None: patch["overdue_weekly_enabled"] = bool(overdue_weekly_enabled)
     if overdue_day is not None: patch["overdue_day"] = int(overdue_day)
     if overdue_hour is not None: patch["overdue_hour"] = int(overdue_hour)
+    if expiry_alerts is not None: patch["expiry_alerts"] = bool(expiry_alerts)
     if not patch:
         return {"error": "no fields to update"}
 

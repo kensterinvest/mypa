@@ -17,11 +17,14 @@ def add_reminder(
     item_id: int, payload: ReminderCreate, request: Request,
     db: Session = Depends(get_session),
 ) -> ReminderOut:
-    r = service.add_reminder(
-        db, item_id=item_id, fire_at=payload.fire_at,
-        message=payload.message, channel=payload.channel,
-        user_id=_uid(request),
-    )
+    try:
+        r = service.add_reminder(
+            db, item_id=item_id, fire_at=payload.fire_at,
+            message=payload.message, channel=payload.channel,
+            user_id=_uid(request), repeat=payload.repeat,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if r is None:
         raise HTTPException(status_code=404, detail="item not found")
     return ReminderOut.model_validate(r, from_attributes=True)
