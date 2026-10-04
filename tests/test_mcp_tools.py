@@ -94,7 +94,8 @@ def test_pa_add_reminder():
     r = mcp_mod.pa_add_reminder(iid, fire_at=fire, message="Test!")
     assert r["item_id"] == iid
     assert r["channel"] == "ntfy"
-    assert "Telegram delivery worker not yet active" in r["note"]
+    assert r["reminder_id"] > 0
+    assert r["item_title"] == "Test task"
 
 
 def test_pa_add_reminder_missing_item():

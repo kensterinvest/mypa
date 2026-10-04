@@ -91,7 +91,8 @@ read them back to you ("Saved as `preference` — Pizza. Want to
 change?") so you can correct if it picked the wrong kind.
 
 To **undo** the last save: just say "undo that" — Claude will call
-`pa_undo_last` for you.
+`pa_undo_last` for you. Undo covers saves from the last 10 minutes;
+for anything older, ask Claude to find and delete it.
 
 ---
 
@@ -104,7 +105,8 @@ To **undo** the last save: just say "undo that" — Claude will call
   moves, parenting calls).
 - **Wiki-links connect items.** In Claude or the dashboard, you can
   link items in body text: `[[person:Alice]]`, `[[place:Hummingbird]]`,
-  `[[item:42]]`. These are resolved at read time.
+  `[[item:42]]`. Today they're plain text that search can find;
+  automatic linking between items is planned.
 - **One source, many devices.** Whatever you save from your phone
   shows up on Claude desktop and the web dashboard, and vice versa.
 - **Privacy boundary.** Other people in your family/org install have

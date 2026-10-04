@@ -1,6 +1,6 @@
 """APScheduler-driven notification dispatcher.
 
-Two jobs run continuously inside mypa-api:
+Three jobs run continuously inside mypa-api:
 
 1. dispatch_reminders — scans the `reminders` table every 60s for rows
    where fire_at <= now AND fired_at IS NULL, dispatches a push for
@@ -15,6 +15,9 @@ Comparing raw strings is wrong: ' ' sorts before 'T'.
 2. dispatch_digests — every 60s checks each user: is "now in their TZ"
    == digest_hour:XX, AND have we not already fired their digest today?
    If both true, build a digest summary and push it.
+
+3. dispatch_overdue_weekly — same pattern, once a week on the user's
+   overdue_day/overdue_hour: lists open items that are past due.
 
 Both jobs are user-scoped: they pull each row's user_id, then resolve
 that user's topic and prefs. No cross-tenant leak possible.
@@ -222,6 +225,74 @@ def dispatch_digests() -> int:
     return sent
 
 
+def _sent_today(last_sent: str | None, tz: ZoneInfo, local_day_start: datetime) -> bool:
+    if not last_sent:
+        return False
+    try:
+        dt = datetime.fromisoformat(last_sent)
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(tz) >= local_day_start
+
+
+def dispatch_overdue_weekly() -> int:
+    """Weekly catch-up: on the user's overdue_day (0=Sunday..6=Saturday)
+    at overdue_hour local time, push the open items that are past due.
+    Nothing is sent when nothing is overdue.
+    """
+    sent = 0
+    now_utc = _now_utc()
+    SessionLocal = session_factory()
+    with SessionLocal() as db:
+        users = db.execute(text(
+            "SELECT id, tz, notify_topic, notify_prefs, last_overdue_at "
+            "FROM users WHERE disabled_at IS NULL AND notify_topic IS NOT NULL"
+        )).fetchall()
+
+        for uid, tz_name, topic, prefs_raw, last_sent in users:
+            prefs = _load_prefs(prefs_raw)
+            if not prefs.get("overdue_weekly_enabled"):
+                continue
+            tz = _user_tz(tz_name or "Etc/UTC")
+            local = now_utc.astimezone(tz)
+            sunday_based_weekday = (local.weekday() + 1) % 7  # Mon=0 → Sun=0
+            if sunday_based_weekday != int(prefs.get("overdue_day", 0)):
+                continue
+            if local.hour != int(prefs.get("overdue_hour", 9)):
+                continue
+            local_day_start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+            if _sent_today(last_sent, tz, local_day_start):
+                continue
+
+            rows = db.execute(text(
+                "SELECT title FROM items WHERE user_id = :u AND status = 'open' "
+                "AND due_at IS NOT NULL AND julianday(due_at) < julianday(:now) "
+                "ORDER BY julianday(due_at) ASC"
+            ), {"u": uid, "now": db_ts(now_utc)}).fetchall()
+            if rows:
+                titles = [r[0] for r in rows]
+                shown = ", ".join(titles[:8]) + (f" +{len(titles) - 8} more" if len(titles) > 8 else "")
+                ok = notifier.publish(
+                    topic,
+                    title=f"MyPA — {len(titles)} overdue",
+                    message=shown,
+                    priority=3,
+                    tags=["hourglass"],
+                )
+                if not ok:
+                    continue  # retry next tick within the hour
+                sent += 1
+            db.execute(text(
+                "UPDATE users SET last_overdue_at = :now WHERE id = :i"
+            ), {"now": now_utc.isoformat(), "i": uid})
+        db.commit()
+    if sent:
+        log.info("dispatch_overdue_weekly: sent %d", sent)
+    return sent
+
+
 def start_scheduler() -> BackgroundScheduler | None:
     """Boot the APScheduler with both jobs. Called from main.py lifespan.
     Idempotent — returns existing scheduler if already started.
@@ -238,6 +309,8 @@ def start_scheduler() -> BackgroundScheduler | None:
                   id="dispatch_reminders", max_instances=1, coalesce=True)
     sched.add_job(dispatch_digests, IntervalTrigger(seconds=60),
                   id="dispatch_digests", max_instances=1, coalesce=True)
+    sched.add_job(dispatch_overdue_weekly, IntervalTrigger(seconds=60),
+                  id="dispatch_overdue_weekly", max_instances=1, coalesce=True)
     sched.start()
     _scheduler = sched
     log.info("notification scheduler started")

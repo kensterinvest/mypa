@@ -8,7 +8,6 @@ Run via systemd:
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -24,7 +23,7 @@ from .db import session_factory
 from .schemas import ItemCreate, ItemPatch
 from . import service
 from .settings import settings
-from .timeutil import iso
+from .timeutil import iso, parse_iso
 
 
 # -----------------------------------------------------------------------------
@@ -75,6 +74,17 @@ def _serialize(item) -> dict:
         "created_at": iso(item.created_at),
         "updated_at": iso(item.updated_at),
         "completed_at": iso(item.completed_at),
+    }
+
+
+def _serialize_reminder(r) -> dict:
+    return {
+        "reminder_id": r.id,
+        "item_id": r.item_id,
+        "item_title": r.item.title if r.item else None,
+        "fire_at": iso(r.fire_at),
+        "message": r.message,
+        "channel": r.channel,
     }
 
 
@@ -133,6 +143,9 @@ def pa_add(
     use ## headings (Thesis, Risks, Context), and (later) link to
     other items with [[person:Name]] / [[place:Name]] / [[item:N]].
 
+    `due_at` is ISO 8601. Include an offset ("2026-10-05T15:30:00+01:00");
+    without one it's read as the user's local time.
+
     `context` is optional — pass the surrounding 1-3 user messages so
     the saved item has conversational context preserved under a
     `## Context` heading.
@@ -140,37 +153,53 @@ def pa_add(
     Returns the parsed item so the caller can show read-back to the
     user. Save with confidence then surface the result ("Saved as
     `preference` — Pizza"). User can undo via pa_undo_last() within
-    30s of the save.
+    10 minutes of the save.
     """
     if (denied := _deny_if_read_only("pa_add")):
         return denied
     Session = session_factory()
-    payload = ItemCreate(
-        kind=kind,
-        title=title,
-        body=body,
-        data=data or {},
-        tags=tags or [],
-        due_at=datetime.fromisoformat(due_at) if due_at else None,
-        context=context,
-    )
-    with Session() as db:
-        item = service.create_item(db, payload, user_id=current_user_id())
-        result = _serialize(item)
+    try:
+        payload = ItemCreate(
+            kind=kind,
+            title=title,
+            body=body,
+            data=data or {},
+            tags=tags or [],
+            due_at=parse_iso(due_at, "due_at") if due_at else None,
+            context=context,
+            source="claude",
+        )
+        with Session() as db:
+            item = service.create_item(db, payload, user_id=current_user_id())
+            result = _serialize(item)
+    except ValueError as e:
+        audit("pa_add", {"kind": kind, "title": title}, f"rejected: {e}", 1)
+        return {"error": str(e)}
     audit("pa_add", {"kind": kind, "title": title}, f"id={result['id']}")
     return result
 
 
 @mcp.tool()
 def pa_get(item_id: int) -> dict:
-    """Fetch a single item by id. Returns full record including body and data{}."""
+    """Fetch a single item by id. Returns the full record (body, data{}),
+    plus its pending reminders and attached files."""
     Session = session_factory()
+    uid = current_user_id()
     with Session() as db:
-        item = service.get_item(db, item_id, user_id=current_user_id())
+        item = service.get_item(db, item_id, user_id=uid)
         if item is None:
             audit("pa_get", {"item_id": item_id}, "not found", 1)
             return {"error": "not found", "item_id": item_id}
         result = _serialize(item)
+        result["reminders"] = [
+            _serialize_reminder(r)
+            for r in service.upcoming_reminders(db, limit=50, user_id=uid, item_id=item_id)
+        ]
+        result["attachments"] = [
+            {"attachment_id": a.id, "mime": a.mime, "bytes": a.bytes, "alt_text": a.alt_text}
+            for a in (att_lib.list_attachments_for_item(db, item_id, user_id=uid)
+                      if uid is not None else [])
+        ]
     audit("pa_get", {"item_id": item_id}, "ok")
     return result
 
@@ -182,22 +211,38 @@ def pa_list(
     due_before: str | None = None,
     tag: str | None = None,
     limit: int = 20,
+    offset: int = 0,
+    order_by: str = "updated",
 ) -> dict:
-    """List items, filtered. Returns items in most-recently-updated order.
+    """List items, filtered. Filters are AND-combined.
 
-    Filters are AND-combined. Use this for "what todos do I have?" /
-    "show me my places" / "anything due before Friday?".
+    Use this for "what todos do I have?" / "show me my places" /
+    "anything due before Friday?".
+
+    - `tag` matches a whole tag exactly ("art" does not match "party").
+    - `due_before` is ISO 8601; without an offset it's the user's local time.
+    - `order_by`: "updated" (default, newest first), "due" (soonest due
+      first — use for "what's next?") or "created".
+    - Page with `offset`: if count == limit there may be more.
     """
+    if order_by not in ("updated", "due", "created"):
+        return {"error": "order_by must be 'updated', 'due' or 'created'"}
     Session = session_factory()
+    try:
+        cutoff = parse_iso(due_before, "due_before") if due_before else None
+    except ValueError as e:
+        return {"error": str(e)}
     with Session() as db:
         items = service.list_items(
             db,
             kind=kind,
             status=status,
-            due_before=datetime.fromisoformat(due_before) if due_before else None,
+            due_before=cutoff,
             tag=tag,
             limit=limit,
+            offset=offset,
             user_id=current_user_id(),
+            order_by=order_by,
         )
         result = [_serialize(i) for i in items]
     audit(
@@ -211,6 +256,8 @@ def pa_list(
 @mcp.tool()
 def pa_search(q: str, limit: int = 10) -> dict:
     """Search items by free-text query across title + body + tags.
+    Every word must match somewhere, in any order ("pizza london" finds
+    "London's best pizza").
 
     Use for "find...", "did I save something about...", "what did
     I record about X". For decision-related questions ("why did I
@@ -241,12 +288,12 @@ def pa_describe_schema() -> dict:
 
 @mcp.tool()
 def pa_undo_last(source: str | None = None) -> dict:
-    """Soft-undo: delete the most recently created item (optionally
-    filtered by source like 'telegram' or 'manual').
+    """Undo the most recent save: delete the newest item created in the
+    last 10 minutes (optionally filtered by source, e.g. 'claude' for
+    items saved through this connector).
 
-    Used after a pa_add when the user says "actually no", "undo that",
-    "wrong save", or taps the inline Undo button in Telegram (30-second
-    window).
+    Use right after a pa_add when the user says "actually no", "undo
+    that", "wrong save". For anything older, find it and use pa_delete.
     """
     if (denied := _deny_if_read_only("pa_undo_last")):
         return denied
@@ -255,7 +302,8 @@ def pa_undo_last(source: str | None = None) -> dict:
         item = service.undo_last(db, source=source, user_id=current_user_id())
     if item is None:
         audit("pa_undo_last", {"source": source}, "nothing to undo", 1)
-        return {"error": "nothing to undo"}
+        return {"error": "nothing saved in the last 10 minutes to undo; "
+                         "use pa_search + pa_delete for older items"}
     audit("pa_undo_last", {"source": source}, f"removed id={item.id}")
     return {"removed_id": item.id, "title": item.title, "kind": item.kind}
 
@@ -313,24 +361,26 @@ def pa_update(
     Use when the user says "change", "update", "edit", "rename", "mark
     as done", "snooze", "reschedule", or wants to add an `## Update
     YYYY-MM-DD` section to a decision.
+
+    `due_at`: ISO 8601 to set; pass "" (empty string) to clear the due date.
+    `data` replaces the whole data{} object — pa_get first and send the
+    merged dict to change one field.
     """
     if (denied := _deny_if_read_only("pa_update")):
         return denied
-    from .schemas import ItemPatch
-    from datetime import datetime
-
     patch_kwargs: dict[str, Any] = {"allow_history_rewrite": allow_history_rewrite}
     if title is not None: patch_kwargs["title"] = title
     if body is not None: patch_kwargs["body"] = body
     if status is not None: patch_kwargs["status"] = status
     if priority is not None: patch_kwargs["priority"] = priority
-    if due_at is not None: patch_kwargs["due_at"] = datetime.fromisoformat(due_at)
     if tags is not None: patch_kwargs["tags"] = tags
     if data is not None: patch_kwargs["data"] = data
 
-    patch = ItemPatch(**patch_kwargs)
     Session = session_factory()
     try:
+        if due_at is not None:
+            patch_kwargs["due_at"] = parse_iso(due_at, "due_at") if due_at.strip() else None
+        patch = ItemPatch(**patch_kwargs)
         with Session() as db:
             item = service.update_item(db, item_id, patch, user_id=current_user_id())
     except ValueError as e:
@@ -364,37 +414,72 @@ def pa_complete(item_id: int) -> dict:
 
 @mcp.tool()
 def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> dict:
-    """Schedule a reminder for an item. The reminder fires via Telegram
-    once the Phase 2 worker is live (not yet). Stored regardless so it'll
-    fire as soon as the worker comes online.
+    """Schedule a push notification for an item. Delivered through ntfy
+    to the user's phone at `fire_at` (if they've subscribed — see
+    pa_get_notify_prefs). The reminder needs an item: pa_add first
+    (kind='todo' or 'reminder') if there isn't one.
 
-    `fire_at` is ISO 8601 (e.g. "2026-05-22T15:30:00+01:00").
+    `fire_at` is ISO 8601. Include an offset ("2026-05-22T15:30:00+01:00");
+    without one it's read as the user's local time.
     Use when the user says "remind me", "alert me", "tell me at", "ping me".
+    To snooze or move a reminder: pa_cancel_reminder, then add a new one.
     """
     if (denied := _deny_if_read_only("pa_add_reminder")):
         return denied
-    from datetime import datetime
+    try:
+        when = parse_iso(fire_at, "fire_at")
+    except ValueError as e:
+        return {"error": str(e)}
     Session = session_factory()
     with Session() as db:
         r = service.add_reminder(
             db, item_id=item_id,
-            fire_at=datetime.fromisoformat(fire_at),
+            fire_at=when,
             message=message,
             channel="ntfy",
             user_id=current_user_id(),
         )
+        if r is None:
+            audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, "item not found", 1)
+            return {"error": "item not found", "item_id": item_id}
+        audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, f"reminder id={r.id}")
+        result = _serialize_reminder(r)
+    return result
+
+
+@mcp.tool()
+def pa_list_reminders(limit: int = 20) -> dict:
+    """List the user's pending (not yet sent) reminders, soonest first,
+    with the title of the item each belongs to.
+
+    Use for "what reminders do I have?", "when will you remind me about
+    X?", or to find a reminder_id before pa_cancel_reminder.
+    """
+    Session = session_factory()
+    with Session() as db:
+        rows = service.upcoming_reminders(db, limit=min(limit, 100), user_id=current_user_id())
+        result = [_serialize_reminder(r) for r in rows]
+    audit("pa_list_reminders", {"limit": limit}, f"{len(result)} reminders")
+    return {"count": len(result), "reminders": result}
+
+
+@mcp.tool()
+def pa_cancel_reminder(reminder_id: int) -> dict:
+    """Cancel a pending reminder (the item itself is kept).
+
+    Use for "cancel/stop/don't remind me about X". To snooze or move a
+    reminder, cancel it and pa_add_reminder with the new time.
+    """
+    if (denied := _deny_if_read_only("pa_cancel_reminder")):
+        return denied
+    Session = session_factory()
+    with Session() as db:
+        r = service.cancel_reminder(db, reminder_id, user_id=current_user_id())
     if r is None:
-        audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, "item not found", 1)
-        return {"error": "item not found", "item_id": item_id}
-    audit("pa_add_reminder", {"item_id": item_id, "fire_at": fire_at}, f"reminder id={r.id}")
-    return {
-        "reminder_id": r.id,
-        "item_id": r.item_id,
-        "fire_at": iso(r.fire_at),
-        "message": r.message,
-        "channel": r.channel,
-        "note": "Reminder stored. Telegram delivery worker not yet active — will fire once Phase 2 ships.",
-    }
+        audit("pa_cancel_reminder", {"reminder_id": reminder_id}, "not found", 1)
+        return {"error": "no pending reminder with that id", "reminder_id": reminder_id}
+    audit("pa_cancel_reminder", {"reminder_id": reminder_id}, "cancelled")
+    return {"cancelled_reminder_id": reminder_id, "item_id": r.item_id}
 
 
 # -----------------------------------------------------------------------------
@@ -471,45 +556,6 @@ def pa_attach_image(
     }
 
 
-@mcp.tool()
-def pa_extract_from_image(
-    image_b64: str,
-    mime_type: str = "image/jpeg",
-    hint: str | None = None,
-) -> dict:
-    """Server-side vision extraction. Calls Anthropic Claude vision to
-    propose a structured MyPA item draft from an image. DOES NOT SAVE —
-    returns a draft for the caller to review and then optionally pa_add.
-
-    OPT-IN: requires the operator to set IMAGE_EXTRACTION_ENABLED=true
-    in /etc/mypa/env. Default is false (privacy). If disabled, returns
-    an error explaining how to enable.
-
-    This tool exists mainly for non-Claude callers (cron jobs, scripts,
-    dashboard upload widgets). If you're Claude.ai with native vision,
-    you can extract directly and call pa_add yourself — that's cheaper.
-
-    Pass `hint` to bias extraction toward a specific kind: e.g.
-    hint='business card' nudges toward kind='person'.
-    """
-    s = settings()
-    if not s.image_extraction_enabled:
-        return {
-            "error": "image extraction disabled",
-            "detail": "Set IMAGE_EXTRACTION_ENABLED=true in /etc/mypa/env and restart mypa-mcp.",
-        }
-    if not s.anthropic_api_key:
-        return {"error": "ANTHROPIC_API_KEY not configured"}
-
-    # Implementation deferred to a follow-up — the wiring above gates
-    # the feature; the actual vision call lives in a separate module
-    # so it can be unit-tested without hitting the API.
-    return {
-        "error": "not implemented yet",
-        "detail": "pa_extract_from_image is stubbed. Use Claude's native vision + pa_add for now.",
-    }
-
-
 # -----------------------------------------------------------------------------
 # Phase 4 — notification preferences (MCP surface so Claude can change them)
 # -----------------------------------------------------------------------------
@@ -533,10 +579,7 @@ def pa_get_notify_prefs() -> dict:
         s = users_lib.get_notify_settings(db, uid)
     if not s:
         return {"error": "user not found"}
-    base = (settings.public_host or "") if isinstance(settings, type) else ""
-    # Avoid coupling to mcp_server's `settings()` call — re-import:
-    from .settings import settings as _s
-    base = (_s().ntfy_base_url or "").rstrip("/")
+    base = (settings().ntfy_base_url or "").rstrip("/")
     audit("pa_get_notify_prefs", {}, "ok")
     return {
         "tz": s["tz"],
@@ -589,7 +632,7 @@ def pa_set_notify_prefs(
     with Session() as db:
         try:
             result = users_lib.set_notify_prefs(db, uid, patch)
-        except ValueError as e:
+        except (ValueError, LookupError) as e:
             audit("pa_set_notify_prefs", patch, f"rejected: {e}", 1)
             return {"error": str(e)}
     audit("pa_set_notify_prefs", patch, "ok")

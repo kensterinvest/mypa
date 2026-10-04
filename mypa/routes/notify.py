@@ -48,23 +48,15 @@ def update_prefs(payload: dict, request: Request, db: Session = Depends(get_sess
        overdue_day, overdue_hour.
     Returns the new full settings."""
     uid = _uid(request)
-    # Whitelist the keys we accept
-    allowed = {"tz", "realtime", "digest_enabled", "digest_hour",
-               "overdue_weekly_enabled", "overdue_day", "overdue_hour"}
-    patch = {k: v for k, v in (payload or {}).items() if k in allowed}
+    patch = {k: v for k, v in (payload or {}).items() if k in users_lib.NOTIFY_PREF_KEYS}
     if not patch:
         raise HTTPException(status_code=400, detail="no recognised fields in payload")
-    # Validate digest_hour 0-23 and overdue_hour 0-23, overdue_day 0-6
-    if "digest_hour" in patch and not (0 <= int(patch["digest_hour"]) <= 23):
-        raise HTTPException(status_code=400, detail="digest_hour must be 0-23")
-    if "overdue_hour" in patch and not (0 <= int(patch["overdue_hour"]) <= 23):
-        raise HTTPException(status_code=400, detail="overdue_hour must be 0-23")
-    if "overdue_day" in patch and not (0 <= int(patch["overdue_day"]) <= 6):
-        raise HTTPException(status_code=400, detail="overdue_day must be 0-6 (0=Sunday)")
     try:
         result = users_lib.set_notify_prefs(db, uid, patch)
-    except ValueError as e:
+    except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return result
 
 

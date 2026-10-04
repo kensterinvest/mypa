@@ -7,10 +7,10 @@ two surfaces.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, literal, or_, select
 from sqlalchemy.orm import Session
 
 from .models import Item, Reminder
@@ -80,6 +80,17 @@ def get_item(db: Session, item_id: int, user_id: int | None = None) -> Item | No
     return item
 
 
+def _has_tag(tag: str):
+    """Exact tag match. Tags are stored comma-joined ("food,italy"), so
+    wrap in commas — a bare LIKE '%art%' would also match 'party'."""
+    needle = f"%,{_escape_like(tag.strip().lower())},%"
+    return (literal(",") + Item.tags + literal(",")).like(needle, escape="\\")
+
+
+def _escape_like(s: str) -> str:
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def list_items(
     db: Session,
     kind: str | None = None,
@@ -89,7 +100,10 @@ def list_items(
     limit: int = 50,
     offset: int = 0,
     user_id: int | None = None,
+    order_by: str = "updated",
 ) -> list[Item]:
+    """order_by: 'updated' (newest first, default), 'due' (soonest due
+    first, undated last) or 'created' (newest first)."""
     stmt = select(Item)
     if user_id is not None:
         stmt = stmt.where(Item.user_id == user_id)
@@ -101,8 +115,14 @@ def list_items(
         due_before = to_utc(due_before, user_tz_name(db, user_id))
         stmt = stmt.where(Item.due_at != None, Item.due_at <= due_before)  # noqa: E711
     if tag:
-        stmt = stmt.where(Item.tags.like(f"%{tag.lower()}%"))
-    stmt = stmt.order_by(Item.updated_at.desc()).limit(min(limit, 500)).offset(offset)
+        stmt = stmt.where(_has_tag(tag))
+    if order_by == "due":
+        stmt = stmt.order_by(Item.due_at.is_(None), Item.due_at.asc())
+    elif order_by == "created":
+        stmt = stmt.order_by(Item.created_at.desc())
+    else:
+        stmt = stmt.order_by(Item.updated_at.desc())
+    stmt = stmt.limit(min(limit, 500)).offset(offset)
     return list(db.execute(stmt).scalars())
 
 
@@ -114,17 +134,20 @@ def search_items(db: Session, q: str, limit: int = 20, user_id: int | None = Non
     ~100K items. Replace with FTS5 + denormalized body_indexed column
     once that becomes the bottleneck.
     """
-    q = q.strip()
-    if not q:
+    words = q.split()
+    if not words:
         return []
-    needle = f"%{q.lower()}%"
-    stmt = select(Item).where(
-        or_(
-            Item.title.ilike(needle),
-            Item.body.ilike(needle),
-            Item.tags.ilike(needle),
-        )
-    )
+    # Every word must appear somewhere (title, body or tags), in any order:
+    # "pizza london" finds "London's best pizza".
+    conds = []
+    for w in words[:10]:
+        needle = f"%{_escape_like(w.lower())}%"
+        conds.append(or_(
+            Item.title.ilike(needle, escape="\\"),
+            Item.body.ilike(needle, escape="\\"),
+            Item.tags.ilike(needle, escape="\\"),
+        ))
+    stmt = select(Item).where(and_(*conds))
     if user_id is not None:
         stmt = stmt.where(Item.user_id == user_id)
     stmt = stmt.order_by(Item.updated_at.desc()).limit(min(limit, 200))
@@ -204,21 +227,43 @@ def add_reminder(
     return r
 
 
-def upcoming_reminders(db: Session, limit: int = 20, user_id: int | None = None) -> list[Reminder]:
+def upcoming_reminders(
+    db: Session, limit: int = 20, user_id: int | None = None, item_id: int | None = None,
+) -> list[Reminder]:
     stmt = select(Reminder).where(Reminder.fired_at == None)  # noqa: E711
     if user_id is not None:
         stmt = stmt.where(Reminder.user_id == user_id)
+    if item_id is not None:
+        stmt = stmt.where(Reminder.item_id == item_id)
     stmt = stmt.order_by(Reminder.fire_at.asc()).limit(limit)
     return list(db.execute(stmt).scalars())
 
 
-def undo_last(db: Session, source: str | None = None, user_id: int | None = None) -> Item | None:
-    """Soft-undo: delete the most recently created item, optionally filtered by source.
+def cancel_reminder(db: Session, reminder_id: int, user_id: int | None = None) -> Reminder | None:
+    """Delete a pending reminder. Returns it, or None if not found / not
+    yours / already fired."""
+    r = db.get(Reminder, reminder_id)
+    if r is None or r.fired_at is not None:
+        return None
+    if user_id is not None and r.user_id != user_id:
+        return None
+    db.delete(r)
+    db.commit()
+    return r
 
-    Used by the 30-second undo window after a save (Telegram inline button)
-    and by the `/undo` command. Hard-deletes; we don't track tombstones in MVP.
+
+# How long after a save "undo" still applies. Long enough for a
+# conversational "actually no, undo that"; short enough that it can't
+# silently delete something saved days ago.
+UNDO_WINDOW = timedelta(minutes=10)
+
+
+def undo_last(db: Session, source: str | None = None, user_id: int | None = None) -> Item | None:
+    """Undo the most recent save: delete the newest item created within
+    UNDO_WINDOW, optionally filtered by source. Hard-deletes.
     """
-    stmt = select(Item)
+    cutoff = datetime.now(timezone.utc) - UNDO_WINDOW
+    stmt = select(Item).where(Item.created_at >= cutoff)
     if user_id is not None:
         stmt = stmt.where(Item.user_id == user_id)
     if source:

@@ -64,15 +64,16 @@ durable, structured facts of your life.
 - **SQLCipher** AES-256 encryption at rest; backups equally opaque
 - **OAuth 2.1 + PKCE** for Claude.ai connector login, with RFC 6749 §10.4
   refresh-token rotation and reuse detection
-- **10 MCP tools**: `pa_add`, `pa_get`, `pa_list`, `pa_search`,
+- **15 MCP tools**: `pa_add`, `pa_get`, `pa_list`, `pa_search`,
   `pa_describe_schema`, `pa_undo_last`, `pa_delete`, `pa_update`,
-  `pa_complete`, `pa_add_reminder`, plus `pa_attach_image`,
+  `pa_complete`, `pa_add_reminder`, `pa_list_reminders`,
+  `pa_cancel_reminder`, plus `pa_attach_image`,
   `pa_get_notify_prefs`, `pa_set_notify_prefs`
 - **Push notifications** via self-hosted [ntfy](https://ntfy.sh), with
   authenticated publish + per-user read tokens (no spoofing)
 - **REST API + Angular dashboard** for browsing
 - **Image attachments** — content-addressed, deduplicated, user-scoped
-- **MIT licensed**, end-to-end exportable as Markdown + YAML
+- **MIT licensed**, your data in one SQLite file you own (Markdown/YAML export is planned)
 
 ## Quick start
 

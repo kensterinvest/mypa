@@ -216,13 +216,52 @@ def get_notify_settings(db: Session, user_id: int) -> dict:
     }
 
 
+NOTIFY_PREF_KEYS = {"tz", "realtime", "digest_enabled", "digest_hour",
+                    "overdue_weekly_enabled", "overdue_day", "overdue_hour"}
+
+
+def validate_notify_prefs(patch: dict) -> dict:
+    """Check and coerce a notify-prefs patch. Raises ValueError with a
+    message the caller (human or Claude) can act on."""
+    from zoneinfo import ZoneInfo
+    unknown = set(patch) - NOTIFY_PREF_KEYS
+    if unknown:
+        raise ValueError(f"unknown field(s): {', '.join(sorted(unknown))}")
+    out = dict(patch)
+    if "tz" in out:
+        try:
+            ZoneInfo(str(out["tz"]))
+        except Exception:
+            raise ValueError(
+                f"unknown timezone {out['tz']!r}: use an IANA name like "
+                "'Europe/London' or 'America/New_York'"
+            )
+    for key, hi, label in (("digest_hour", 23, "0-23"), ("overdue_hour", 23, "0-23"),
+                           ("overdue_day", 6, "0-6 (0=Sunday)")):
+        if key in out:
+            try:
+                out[key] = int(out[key])
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} must be an integer {label}")
+            if not 0 <= out[key] <= hi:
+                raise ValueError(f"{key} must be {label}")
+    for key in ("realtime", "digest_enabled", "overdue_weekly_enabled"):
+        if key in out:
+            out[key] = bool(out[key])
+    return out
+
+
 def set_notify_prefs(db: Session, user_id: int, patch: dict) -> dict:
     """Merge `patch` into the user's notify_prefs JSON. Returns the new
-    full settings (via get_notify_settings)."""
+    full settings (via get_notify_settings).
+
+    Raises ValueError for invalid values, LookupError if the user is unknown.
+    """
     import json
+    patch = validate_notify_prefs(patch)
     current = get_notify_settings(db, user_id)
     if not current:
-        raise ValueError("user not found")
+        raise LookupError("user not found")
     new_prefs = {**current["prefs"], **patch}
     # tz is stored as a separate column for index-ability — handle if passed
     if "tz" in patch:

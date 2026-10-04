@@ -76,7 +76,8 @@ Then in any Claude.ai chat (mobile or desktop):
 
 Claude should list your tools (`pa_add`, `pa_get`, `pa_list`,
 `pa_search`, `pa_describe_schema`, `pa_undo_last`, `pa_delete`,
-`pa_update`, `pa_complete`, `pa_add_reminder`).
+`pa_update`, `pa_complete`, `pa_add_reminder`, `pa_list_reminders`,
+`pa_cancel_reminder`, …).
 
 A first capture to test:
 

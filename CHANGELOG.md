@@ -41,6 +41,29 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The SQLCipher key is quote-escaped in `PRAGMA key`, matching the
   snapshot scripts.
 
+### Changed — MCP tool surface
+- New tools: `pa_list_reminders` and `pa_cancel_reminder` (snooze =
+  cancel + re-add). `pa_get` now includes the item's pending reminders
+  and attachments.
+- `pa_list` gained `offset` and `order_by` (`updated` / `due` / `created`).
+- `pa_search` matches every word in any order ("pizza london" finds
+  "London's best pizza") instead of the exact phrase.
+- `tag` filters match whole tags (`art` no longer matches `party`).
+- `pa_update(due_at="")` clears a due date.
+- Bad dates, comma tags and invalid notify prefs return an `error` that
+  explains the fix instead of raising. Notify prefs (`tz`, hours, day)
+  are validated in one place for REST and MCP.
+- `pa_undo_last` only undoes saves from the last 10 minutes (it used to
+  delete the newest item however old). Items saved via MCP are now
+  `source="claude"`.
+- Removed the `pa_extract_from_image` stub (it always failed).
+- Fixed the stale "Telegram worker not yet active" note on reminders.
+- **Weekly overdue catch-up now actually sends.** The
+  `overdue_weekly_*` prefs had no job behind them. Migration
+  `009_weekly_overdue.sql` adds `users.last_overdue_at`.
+- README / USER_GUIDE no longer claim Markdown export or wiki-link
+  resolution, which don't exist yet.
+
 ### Changed — MCP endpoint
 - **Canonical MCP URL is now `https://<host>/mcp`** (Streamable HTTP).
   The old `https://<host>/mcp/sse` URL always spoke Streamable HTTP
