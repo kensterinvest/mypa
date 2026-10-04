@@ -213,6 +213,7 @@ def pa_list(
     limit: int = 20,
     offset: int = 0,
     order_by: str = "updated",
+    where: list[str] | None = None,
 ) -> dict:
     """List items, filtered. Filters are AND-combined.
 
@@ -223,6 +224,9 @@ def pa_list(
     - `due_before` is ISO 8601; without an offset it's the user's local time.
     - `order_by`: "updated" (default, newest first), "due" (soonest due
       first — use for "what's next?") or "created".
+    - `where` filters on data{} fields: ["rating>=4", "category=italian",
+      "notes~garden"]. Ops: = != > >= < <= and ~ (contains); text is
+      case-insensitive; nested keys use dots ("address.city=London").
     - Page with `offset`: if count == limit there may be more.
     """
     if order_by not in ("updated", "due", "created"):
@@ -230,21 +234,22 @@ def pa_list(
     Session = session_factory()
     try:
         cutoff = parse_iso(due_before, "due_before") if due_before else None
+        with Session() as db:
+            items = service.list_items(
+                db,
+                kind=kind,
+                status=status,
+                due_before=cutoff,
+                tag=tag,
+                limit=limit,
+                offset=offset,
+                user_id=current_user_id(),
+                order_by=order_by,
+                where=where,
+            )
+            result = [_serialize(i) for i in items]
     except ValueError as e:
         return {"error": str(e)}
-    with Session() as db:
-        items = service.list_items(
-            db,
-            kind=kind,
-            status=status,
-            due_before=cutoff,
-            tag=tag,
-            limit=limit,
-            offset=offset,
-            user_id=current_user_id(),
-            order_by=order_by,
-        )
-        result = [_serialize(i) for i in items]
     audit(
         "pa_list",
         {"kind": kind, "status": status, "tag": tag, "limit": limit},
@@ -254,10 +259,20 @@ def pa_list(
 
 
 @mcp.tool()
-def pa_search(q: str, limit: int = 10) -> dict:
-    """Search items by free-text query across title + body + tags.
-    Every word must match somewhere, in any order ("pizza london" finds
-    "London's best pizza").
+def pa_search(
+    q: str,
+    limit: int = 10,
+    kind: str | None = None,
+    where: list[str] | None = None,
+) -> dict:
+    """Search items by free-text query across title + body + tags, best
+    match first. Every word must match, in any order, and words match
+    as prefixes and word forms ("pizz" finds "pizza", "run" finds
+    "running").
+
+    Narrow with `kind` ("place") and `where` filters on data{} fields,
+    same syntax as pa_list: pa_search("italian", kind="place",
+    where=["rating>=5"]) answers "which Italian places did I rate 5?".
 
     Use for "find...", "did I save something about...", "what did
     I record about X". For decision-related questions ("why did I
@@ -266,7 +281,11 @@ def pa_search(q: str, limit: int = 10) -> dict:
     """
     Session = session_factory()
     with Session() as db:
-        items = service.search_items(db, q, limit=limit, user_id=current_user_id())
+        try:
+            items = service.search_items(db, q, limit=limit, user_id=current_user_id(),
+                                         kind=kind, where=where)
+        except ValueError as e:
+            return {"error": str(e)}
         result = [_serialize(i) for i in items]
     audit("pa_search", {"q": q, "limit": limit}, f"{len(result)} hits")
     return {"query": q, "count": len(result), "items": result}

@@ -18,6 +18,8 @@ os.environ.setdefault("NTFY_USER_MGMT_ENABLED", "false")
 
 import pytest
 
+from mypa.migrate import split_sql
+
 # Force a fresh settings + engine for each test module
 from mypa import db, settings as settings_mod
 
@@ -62,9 +64,8 @@ def _apply_oauth_schema():
                   "009_weekly_overdue.sql"):
         sql_path = Path(__file__).parent.parent / "migrations" / fname
         sql = sql_path.read_text(encoding="utf-8")
-        sql = "\n".join(l for l in sql.splitlines() if not l.lstrip().startswith("--"))
         with eng.begin() as conn:
-            for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+            for stmt in split_sql(sql):
                 try:
                     conn.execute(text(stmt))
                 except Exception:

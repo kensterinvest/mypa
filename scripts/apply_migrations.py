@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from mypa.db import engine
+from mypa.migrate import split_sql
 
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "migrations"
@@ -51,15 +52,10 @@ def main() -> int:
     for f in pending:
         print(f"applying {f.name}…", end=" ", flush=True)
         raw = f.read_text(encoding="utf-8")
-        # Strip `--` comment lines first — they may contain `;` and confuse
-        # the naive splitter below.
-        sql = "\n".join(
-            line for line in raw.splitlines()
-            if not line.lstrip().startswith("--")
-        )
         with eng.begin() as conn:
             from sqlalchemy import text
-            for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+            # split_sql understands trigger bodies and string literals.
+            for stmt in split_sql(raw):
                 conn.execute(text(stmt))
             conn.execute(
                 text("INSERT INTO schema_versions (filename) VALUES (:n)"),

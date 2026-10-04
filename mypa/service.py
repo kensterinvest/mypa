@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import and_, literal, or_, select
+from sqlalchemy import Float, Integer, and_, func, literal, or_, select, text
 from sqlalchemy.orm import Session
 
 from .models import Item, Reminder
@@ -101,9 +101,11 @@ def list_items(
     offset: int = 0,
     user_id: int | None = None,
     order_by: str = "updated",
+    where: list[str] | None = None,
 ) -> list[Item]:
     """order_by: 'updated' (newest first, default), 'due' (soonest due
-    first, undated last) or 'created' (newest first)."""
+    first, undated last) or 'created' (newest first).
+    where: filters on data{} fields — see _data_filters."""
     stmt = select(Item)
     if user_id is not None:
         stmt = stmt.where(Item.user_id == user_id)
@@ -116,6 +118,8 @@ def list_items(
         stmt = stmt.where(Item.due_at != None, Item.due_at <= due_before)  # noqa: E711
     if tag:
         stmt = stmt.where(_has_tag(tag))
+    if where:
+        stmt = stmt.where(*_data_filters(where))
     if order_by == "due":
         stmt = stmt.order_by(Item.due_at.is_(None), Item.due_at.asc())
     elif order_by == "created":
@@ -126,31 +130,108 @@ def list_items(
     return list(db.execute(stmt).scalars())
 
 
-def search_items(db: Session, q: str, limit: int = 20, user_id: int | None = None) -> list[Item]:
-    """Simple LIKE-based search across title + body + tags.
+_WHERE_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(>=|<=|!=|=|>|<|~)\s*(.*?)\s*$")
 
-    The master plan calls for FTS5; for MVP we use LIKE so we don't need a
-    custom tokenizer for wiki-link syntax. Performance is fine up to
-    ~100K items. Replace with FTS5 + denormalized body_indexed column
-    once that becomes the bottleneck.
+
+def _data_filters(where: list[str] | None) -> list:
+    """Turn ["rating>=4", "category=italian", "notes~fireplace"] into SQL
+    conditions on the JSON `data` column.
+
+    Operators: = != > >= < <= and ~ (contains). Numbers compare
+    numerically; text compares case-insensitively. Nested keys use dots
+    ("address.city=London").
     """
-    words = q.split()
-    if not words:
-        return []
-    # Every word must appear somewhere (title, body or tags), in any order:
-    # "pizza london" finds "London's best pizza".
     conds = []
-    for w in words[:10]:
-        needle = f"%{_escape_like(w.lower())}%"
+    for expr in where or []:
+        m = _WHERE_RE.match(expr or "")
+        if not m or m.group(3) == "" or m.group(3)[0] in "<>=!~":
+            raise ValueError(
+                f"bad filter {expr!r}: use field<op>value, e.g. 'rating>=4', "
+                "'category=italian', 'notes~garden' (ops: = != > >= < <= ~)"
+            )
+        key, op, raw = m.groups()
+        raw = raw.strip("'\"")
+        field = func.json_extract(Item.data, f"$.{key}")
+        if op == "~":
+            conds.append(func.lower(field).like(f"%{_escape_like(raw.lower())}%", escape="\\"))
+            continue
+        try:
+            value: Any = float(raw) if "." in raw else int(raw)
+            lhs = field
+        except ValueError:
+            if raw.lower() in ("true", "false"):
+                value, lhs = (1 if raw.lower() == "true" else 0), field
+            else:
+                value, lhs = raw.lower(), func.lower(field)
+        conds.append({
+            "=": lhs == value, "!=": lhs != value, ">": lhs > value,
+            ">=": lhs >= value, "<": lhs < value, "<=": lhs <= value,
+        }[op])
+    return conds
+
+
+def _fts_query(q: str) -> str | None:
+    """User text -> safe FTS5 MATCH expression: every word must match,
+    as a prefix ("pizz" finds "pizza"). FTS operators in the input are
+    neutralized by quoting each token."""
+    tokens = re.findall(r"\w+", q.lower())[:10]
+    return " ".join(f'"{t}"*' for t in tokens) or None
+
+
+def _has_fts(db: Session) -> bool:
+    return db.execute(text(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'items_fts'"
+    )).first() is not None
+
+
+def search_items(
+    db: Session, q: str, limit: int = 20, user_id: int | None = None,
+    kind: str | None = None, where: list[str] | None = None,
+) -> list[Item]:
+    """Full-text search across title + body + tags, best match first.
+
+    Uses the FTS5 index from migration 010 (stemmed, prefix-matching,
+    title hits ranked above body hits). Falls back to LIKE — every word
+    must appear somewhere — if the index doesn't exist.
+    `kind` and `where` (see _data_filters) narrow the results.
+    """
+    filters = _data_filters(where)
+    if kind:
+        filters.append(Item.kind == kind.strip().lower())
+    if user_id is not None:
+        filters.append(Item.user_id == user_id)
+    limit = min(limit, 200)
+
+    match = _fts_query(q)
+    if match is None:
+        if not (where or kind):
+            return []
+        stmt = select(Item).where(*filters).order_by(Item.updated_at.desc()).limit(limit)
+        return list(db.execute(stmt).scalars())
+
+    if _has_fts(db):
+        # bm25 weights: title 10, body 1, tags 5. Lower rank = better.
+        hits = (
+            text("SELECT rowid AS item_id, bm25(items_fts, 10.0, 1.0, 5.0) AS rank "
+                 "FROM items_fts WHERE items_fts MATCH :q")
+            .bindparams(q=match)
+            .columns(item_id=Integer, rank=Float)
+            .subquery()
+        )
+        stmt = (select(Item).join(hits, hits.c.item_id == Item.id)
+                .where(*filters).order_by(hits.c.rank).limit(limit))
+        return list(db.execute(stmt).scalars())
+
+    conds = []
+    for w in re.findall(r"\w+", q.lower())[:10]:
+        needle = f"%{_escape_like(w)}%"
         conds.append(or_(
             Item.title.ilike(needle, escape="\\"),
             Item.body.ilike(needle, escape="\\"),
             Item.tags.ilike(needle, escape="\\"),
         ))
-    stmt = select(Item).where(and_(*conds))
-    if user_id is not None:
-        stmt = stmt.where(Item.user_id == user_id)
-    stmt = stmt.order_by(Item.updated_at.desc()).limit(min(limit, 200))
+    stmt = (select(Item).where(and_(*conds), *filters)
+            .order_by(Item.updated_at.desc()).limit(limit))
     return list(db.execute(stmt).scalars())
 
 

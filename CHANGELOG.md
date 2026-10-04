@@ -64,6 +64,19 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - README / USER_GUIDE no longer claim Markdown export or wiki-link
   resolution, which don't exist yet.
 
+### Added — better search
+- **Full-text search (FTS5).** Migration `010_items_fts.sql` adds a
+  stemmed, accent-insensitive index over title/body/tags, kept in sync
+  by triggers and backfilled on upgrade. Results are ranked (title hits
+  above body hits) and words match as prefixes ("pizz" → "pizza").
+  Falls back to word-by-word LIKE if the index is missing.
+- **Filters on `data{}` fields** for `pa_list` and `pa_search`:
+  `where=["cuisine=italian", "rating>=5"]`. Ops: `= != > >= < <= ~`
+  (contains), case-insensitive text, dotted keys for nested fields.
+  `pa_search` also takes `kind`.
+- `scripts/apply_migrations.py` now splits SQL with SQLite's own parser
+  (`mypa/migrate.py`), so triggers and `;` inside strings work.
+
 ### Changed — MCP endpoint
 - **Canonical MCP URL is now `https://<host>/mcp`** (Streamable HTTP).
   The old `https://<host>/mcp/sse` URL always spoke Streamable HTTP
