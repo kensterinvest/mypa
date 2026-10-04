@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mypa import mcp_server as mcp_mod
+from tests.conftest import make_admin
 
 INIT = {
     "jsonrpc": "2.0",
@@ -33,6 +34,7 @@ def client():
 
 @pytest.mark.parametrize("path", ["/mcp", "/sse"])
 def test_streamable_http_initialize(client, path):
+    make_admin()  # the in-memory DB is reset per test
     r = client.post(path, json=INIT, headers=HEADERS)
     assert r.status_code == 200, r.text
     assert r.headers.get("mcp-session-id")

@@ -73,7 +73,9 @@ def get_item(db: Session, item_id: int, user_id: int | None = None) -> Item | No
     if item is None:
         return None
     # Scope check: when caller specifies user_id, item must belong to them.
-    if user_id is not None and item.user_id is not None and item.user_id != user_id:
+    # Ownerless legacy rows (user_id NULL) are not visible to any user —
+    # scripts/backfill_admin_user.py assigns them to the admin.
+    if user_id is not None and item.user_id != user_id:
         return None
     return item
 

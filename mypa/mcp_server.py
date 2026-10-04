@@ -18,8 +18,8 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from . import __version__
 from . import attachments as att_lib
-from .audit import audit, current_user_id, set_request_context
-from .auth import _user_id_from_token, classify_token, TokenScope
+from .audit import audit, current_scope, current_user_id, set_request_context
+from .auth import NO_USER_DETAIL, _user_id_from_token, classify_token, TokenScope
 from .db import session_factory
 from .schemas import ItemCreate, ItemPatch
 from . import service
@@ -78,6 +78,16 @@ def _serialize(item) -> dict:
     }
 
 
+def _deny_if_read_only(tool: str) -> dict | None:
+    """Write tools call this first. A read-only token (BEARER_TOKEN_RO or an
+    OAuth grant with only mypa:read) may list and search, never mutate."""
+    if current_scope() == TokenScope.RO.value:
+        audit(tool, {}, "forbidden: read-only token", 1)
+        return {"error": "this connection is read-only (mypa:read); "
+                         "reconnect with write access to change data"}
+    return None
+
+
 def _with_session(fn):
     """Decorator that opens a session, calls fn(session), audits, closes."""
     def wrapped(*args, **kwargs):
@@ -132,6 +142,8 @@ def pa_add(
     `preference` — Pizza"). User can undo via pa_undo_last() within
     30s of the save.
     """
+    if (denied := _deny_if_read_only("pa_add")):
+        return denied
     Session = session_factory()
     payload = ItemCreate(
         kind=kind,
@@ -236,6 +248,8 @@ def pa_undo_last(source: str | None = None) -> dict:
     "wrong save", or taps the inline Undo button in Telegram (30-second
     window).
     """
+    if (denied := _deny_if_read_only("pa_undo_last")):
+        return denied
     Session = session_factory()
     with Session() as db:
         item = service.undo_last(db, source=source, user_id=current_user_id())
@@ -256,6 +270,8 @@ def pa_delete(item_id: int, confirm: bool = False) -> dict:
 
     For "undo the last save" use pa_undo_last instead.
     """
+    if (denied := _deny_if_read_only("pa_delete")):
+        return denied
     if not confirm:
         audit("pa_delete", {"item_id": item_id, "confirm": confirm}, "blocked: confirm=False", 1)
         return {
@@ -298,6 +314,8 @@ def pa_update(
     as done", "snooze", "reschedule", or wants to add an `## Update
     YYYY-MM-DD` section to a decision.
     """
+    if (denied := _deny_if_read_only("pa_update")):
+        return denied
     from .schemas import ItemPatch
     from datetime import datetime
 
@@ -332,6 +350,8 @@ def pa_complete(item_id: int) -> dict:
     Use when the user says "I did X", "X is done", "completed X", "finished X",
     "mark X as done", or anything that signals an open todo / task is now complete.
     """
+    if (denied := _deny_if_read_only("pa_complete")):
+        return denied
     Session = session_factory()
     with Session() as db:
         item = service.complete_item(db, item_id, user_id=current_user_id())
@@ -351,6 +371,8 @@ def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> d
     `fire_at` is ISO 8601 (e.g. "2026-05-22T15:30:00+01:00").
     Use when the user says "remind me", "alert me", "tell me at", "ping me".
     """
+    if (denied := _deny_if_read_only("pa_add_reminder")):
+        return denied
     from datetime import datetime
     Session = session_factory()
     with Session() as db:
@@ -408,6 +430,8 @@ def pa_attach_image(
     `alt_text` is a short human description (for accessibility +
     later search; will be added to the item's body if not provided).
     """
+    if (denied := _deny_if_read_only("pa_attach_image")):
+        return denied
     import base64
     uid = current_user_id()
     if uid is None:
@@ -544,6 +568,8 @@ def pa_set_notify_prefs(
       - overdue_weekly_enabled / overdue_day (0=Sun..6=Sat) / overdue_hour:
         weekly catch-up listing overdue todos.
     """
+    if (denied := _deny_if_read_only("pa_set_notify_prefs")):
+        return denied
     from . import users as users_lib
     uid = current_user_id()
     if uid is None:
@@ -622,6 +648,10 @@ async def auth_middleware(request: Request, call_next):
     # Without this, the MCP surface is effectively a superuser — any
     # connected user could see everyone else's items.
     user_id = _user_id_from_token(auth_header)
+    if user_id is None:
+        # Fail closed — tools treat user_id=None as unscoped (all users' data).
+        return JSONResponse({"error": "forbidden", "detail": NO_USER_DETAIL},
+                            status_code=403)
     client_ip = (
         request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         or (request.client.host if request.client else "?")

@@ -57,7 +57,8 @@ def _build_engine() -> Engine:
             )
         # NB: identifier-style quoting via PRAGMA key = "x'<hex>'" allows
         # binary keys, but the simple string form works for passphrase keys.
-        conn.execute(f"PRAGMA key = '{s.sqlcipher_key}'")
+        safe_key = s.sqlcipher_key.replace("'", "''")  # same as scripts/snapshot.py
+        conn.execute(f"PRAGMA key = '{safe_key}'")
         # Tune SQLCipher to defaults documented in the master plan.
         conn.execute("PRAGMA cipher_compatibility = 4")
         conn.execute("PRAGMA kdf_iter = 256000")

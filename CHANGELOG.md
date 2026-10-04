@@ -26,6 +26,21 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   expires reminders more than a day overdue.
 - Reminder `channel` now defaults to `ntfy` (Telegram delivery never existed).
 
+### Security — access hardening
+- **Read-only tokens can no longer write over MCP.** `BEARER_TOKEN_RO`
+  and OAuth grants with only `mypa:read` were already blocked from REST
+  writes, but every MCP write tool (`pa_add`, `pa_update`, `pa_delete`, …)
+  ignored the scope. Write tools now return a read-only error.
+- **Fail closed when a token maps to no user.** REST and MCP return 403
+  instead of running unscoped (which exposed every user's items). Fresh
+  installs must create an admin (`scripts/add_user.py`) before using the
+  static bearer tokens.
+- Ownerless legacy rows (`user_id IS NULL`) are no longer returned by
+  `get` to every user; `scripts/backfill_admin_user.py` assigns them.
+- Static bearer tokens are compared in constant time.
+- The SQLCipher key is quote-escaped in `PRAGMA key`, matching the
+  snapshot scripts.
+
 ### Changed — MCP endpoint
 - **Canonical MCP URL is now `https://<host>/mcp`** (Streamable HTTP).
   The old `https://<host>/mcp/sse` URL always spoke Streamable HTTP

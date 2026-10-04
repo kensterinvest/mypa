@@ -26,6 +26,11 @@ def set_request_context(ip: str, scope: str, user_id: int | None = None) -> None
     _user_id.set(user_id)
 
 
+def current_scope() -> str:
+    """'rw', 'ro', or '?' when called outside a request (tests, scripts)."""
+    return _token_scope.get()
+
+
 def current_user_id() -> int | None:
     """Read the per-request user_id set by middleware. MCP tools use this
     to scope every service call to the calling user, defending against

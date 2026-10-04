@@ -5,12 +5,14 @@ import pytest
 from mypa.audit import _is_sensitive, _redact
 from mypa.db import Base, engine
 from mypa.main import app
+from tests.conftest import make_admin
 
 RW = {"Authorization": "Bearer test-rw-token"}
 
 
 def _c():
     Base.metadata.create_all(engine())
+    make_admin()
     return TestClient(app)
 
 

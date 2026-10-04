@@ -3,10 +3,12 @@ from fastapi.testclient import TestClient
 
 from mypa.db import Base, engine
 from mypa.main import app
+from tests.conftest import make_admin
 
 
 def _client():
     Base.metadata.create_all(engine())
+    make_admin()
     return TestClient(app)
 
 

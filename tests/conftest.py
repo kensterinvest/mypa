@@ -28,6 +28,10 @@ def reset_state(monkeypatch):
     settings_mod._settings = None
     db._engine = None
     db._session_factory = None
+    # Clear per-request audit context (user_id / scope ContextVars) so a
+    # test that sets it can't leak its user into the next test.
+    from mypa.audit import set_request_context
+    set_request_context("?", "?", user_id=None)
 
     # Tests will lazily init the engine via app startup or direct calls. Use a
     # finalize hook to ensure OAuth tables exist if anything touched the engine.
@@ -66,3 +70,20 @@ def _apply_oauth_schema():
                     # ALTER TABLE … ADD COLUMN raises if column exists
                     # (ORM may have already created it via Base.metadata.create_all).
                     pass
+
+
+def make_admin(email: str = "admin@example.com") -> int:
+    """Create the admin user that static bearer tokens resolve to.
+
+    Requests whose token maps to no user are rejected (fail closed), so
+    any test going through the HTTP middleware needs one.
+    """
+    from mypa import users as users_lib
+    db.Base.metadata.create_all(db.engine())
+    _apply_oauth_schema()
+    with db.session_factory()() as s:
+        existing = users_lib.get_admin_user(s)
+        if existing:
+            return existing.id
+        return users_lib.create_user(s, email, "admin-pw-1234567", name="Admin",
+                                     is_admin=True).id

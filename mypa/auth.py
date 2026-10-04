@@ -5,6 +5,7 @@ Stolen device with RO token → cannot mutate data.
 """
 from __future__ import annotations
 
+import hmac
 from enum import Enum
 
 from fastapi import HTTPException, Request, status
@@ -33,6 +34,17 @@ def resolve_admin_user_id() -> int | None:
         return None
 
 
+def _token_eq(token: str, expected: str | None) -> bool:
+    """Constant-time compare so response timing can't leak the token."""
+    return bool(expected) and hmac.compare_digest(token.encode(), expected.encode())
+
+
+NO_USER_DETAIL = (
+    "token is valid but no MyPA user is linked to it — create an admin "
+    "with scripts/add_user.py or run scripts/backfill_admin_user.py"
+)
+
+
 def classify_token(header_value: str) -> TokenScope | None:
     """Return RW / RO scope of the bearer in the Authorization header, or None.
 
@@ -46,9 +58,9 @@ def classify_token(header_value: str) -> TokenScope | None:
         return None
     token = header_value[7:].strip()
     s = settings()
-    if s.bearer_token_rw and token == s.bearer_token_rw:
+    if _token_eq(token, s.bearer_token_rw):
         return TokenScope.RW
-    if s.bearer_token_ro and token == s.bearer_token_ro:
+    if _token_eq(token, s.bearer_token_ro):
         return TokenScope.RO
     # OAuth JWT path — only if OAUTH_JWT_SECRET is set
     if s.oauth_jwt_secret and token.count(".") == 2:
@@ -93,9 +105,7 @@ def _user_id_from_token(header_value: str) -> int | None:
         return None
     token = header_value[7:].strip()
     s = settings()
-    if s.bearer_token_rw and token == s.bearer_token_rw:
-        return resolve_admin_user_id()
-    if s.bearer_token_ro and token == s.bearer_token_ro:
+    if _token_eq(token, s.bearer_token_rw) or _token_eq(token, s.bearer_token_ro):
         return resolve_admin_user_id()
     if s.oauth_jwt_secret and token.count(".") == 2:
         try:
@@ -142,6 +152,13 @@ async def bearer_auth_middleware(request: Request, call_next):
 
     request.state.token_scope = scope
     user_id = _user_id_from_token(auth_header)
+    if user_id is None:
+        # Fail closed: service functions treat user_id=None as "unscoped",
+        # which would expose every user's data.
+        return JSONResponse(
+            {"error": "forbidden", "detail": NO_USER_DETAIL},
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
     request.state.user_id = user_id
 
     # Also publish the request context to audit.py's ContextVars so the
