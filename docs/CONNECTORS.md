@@ -20,7 +20,7 @@ WhatsApp export ┘
 
 | Source | How it reaches MyPA | Status |
 |---|---|---|
-| **Gmail** | Daily Claude routine reads the last ~2 days of mail and saves bookings, receipts, bills, contracts, appointments, deliveries and new contacts. Each item carries `source="gmail"`, `source_ref=<thread id>` so re-runs never duplicate. | Available |
+| **Gmail** | Daily Claude routine ([prompt + setup](routines/gmail-sync.md)) reads the last ~2 days of mail and saves bookings, receipts, bills, contracts, appointments, deliveries and new contacts. Each item carries `source="gmail"`, `source_ref=<thread id>` so re-runs never duplicate. | Available |
 | **Google Calendar** | Same routine pattern: upcoming events → `event` items with reminders. | Add `Google Calendar` to the routine's connectors |
 | **Google Drive** | On request: "save the key terms of my tenancy agreement in Drive". | Available in chat |
 | **Zoom** | On request: meeting recaps → `decision` / `todo` items. | Available in chat |
