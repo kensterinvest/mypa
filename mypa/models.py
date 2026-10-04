@@ -79,8 +79,13 @@ class Reminder(Base):
     )
     fire_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    channel: Mapped[str] = mapped_column(String(32), default="telegram", nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), default="ntfy", nullable=False)
     message: Mapped[str | None] = mapped_column(Text)
+    # Delivery bookkeeping (migration 008). A reminder that can't be sent is
+    # retried a few times, then closed out with fired_at + last_error so it
+    # never blocks the queue.
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
 
     item: Mapped[Item] = relationship(back_populates="reminders")
 

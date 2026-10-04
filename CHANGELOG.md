@@ -5,6 +5,27 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — reminder timing and queue health
+- **Timezones were dropped on save.** SQLite stores wall time only, so
+  `15:30+01:00` was saved as `15:30` and fired an hour late. All
+  datetimes (`due_at`, reminder `fire_at`, `due_before` filters) are now
+  converted to UTC before storage; naive inputs are read in the user's
+  own `tz`. API/MCP output now carries an explicit `+00:00`.
+  Items saved before this fix with a non-UTC offset keep their old
+  (shifted) value.
+- **Reminders fired early.** The dispatcher string-compared DB values
+  (`2030-05-22 14:30`) with ISO strings (`2030-05-22T…`); since `' ' < 'T'`
+  a reminder became due at 00:00 UTC on its date. The morning digest had
+  the same bug (items due later today counted as "overdue"). Comparisons
+  now use SQLite `julianday()`, which normalizes every stored format.
+- **Stuck reminders blocked the queue.** Skipped reminders (no topic,
+  realtime off, no user) are now closed out with a `last_error`; failed
+  pushes are retried up to 5 times. Previously 100 such rows blocked all
+  newer reminders, and re-enabling realtime replayed the backlog.
+  Migration `008_reminder_delivery.sql` adds `attempts`/`last_error` and
+  expires reminders more than a day overdue.
+- Reminder `channel` now defaults to `ntfy` (Telegram delivery never existed).
+
 ### Changed — MCP endpoint
 - **Canonical MCP URL is now `https://<host>/mcp`** (Streamable HTTP).
   The old `https://<host>/mcp/sse` URL always spoke Streamable HTTP

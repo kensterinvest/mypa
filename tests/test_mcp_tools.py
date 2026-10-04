@@ -93,7 +93,7 @@ def test_pa_add_reminder():
     fire = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
     r = mcp_mod.pa_add_reminder(iid, fire_at=fire, message="Test!")
     assert r["item_id"] == iid
-    assert r["channel"] == "telegram"
+    assert r["channel"] == "ntfy"
     assert "Telegram delivery worker not yet active" in r["note"]
 
 

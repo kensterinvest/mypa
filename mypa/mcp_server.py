@@ -24,6 +24,7 @@ from .db import session_factory
 from .schemas import ItemCreate, ItemPatch
 from . import service
 from .settings import settings
+from .timeutil import iso
 
 
 # -----------------------------------------------------------------------------
@@ -66,14 +67,14 @@ def _serialize(item) -> dict:
         "body": item.body,
         "status": item.status,
         "priority": item.priority,
-        "due_at": item.due_at.isoformat() if item.due_at else None,
+        "due_at": iso(item.due_at),
         "tags": service._str_to_tags(item.tags),
         "data": item.data or {},
         "source": item.source,
         "source_ref": item.source_ref,
-        "created_at": item.created_at.isoformat(),
-        "updated_at": item.updated_at.isoformat(),
-        "completed_at": item.completed_at.isoformat() if item.completed_at else None,
+        "created_at": iso(item.created_at),
+        "updated_at": iso(item.updated_at),
+        "completed_at": iso(item.completed_at),
     }
 
 
@@ -357,7 +358,7 @@ def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> d
             db, item_id=item_id,
             fire_at=datetime.fromisoformat(fire_at),
             message=message,
-            channel="telegram",
+            channel="ntfy",
             user_id=current_user_id(),
         )
     if r is None:
@@ -367,7 +368,7 @@ def pa_add_reminder(item_id: int, fire_at: str, message: str | None = None) -> d
     return {
         "reminder_id": r.id,
         "item_id": r.item_id,
-        "fire_at": r.fire_at.isoformat(),
+        "fire_at": iso(r.fire_at),
         "message": r.message,
         "channel": r.channel,
         "note": "Reminder stored. Telegram delivery worker not yet active — will fire once Phase 2 ships.",

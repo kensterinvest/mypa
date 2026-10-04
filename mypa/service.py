@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from .models import Item, Reminder
 from .schemas import ItemCreate, ItemPatch
+from .timeutil import to_utc, user_tz_name
 
 
 def _tags_to_str(tags: list[str] | None) -> str:
@@ -55,7 +56,7 @@ def create_item(db: Session, payload: ItemCreate, user_id: int | None = None) ->
         body=_append_context(payload.body or "", payload.context),
         status=payload.status,
         priority=payload.priority,
-        due_at=payload.due_at,
+        due_at=to_utc(payload.due_at, user_tz_name(db, user_id)),
         tags=_tags_to_str(payload.tags),
         data=payload.data or {},
         source=payload.source,
@@ -95,6 +96,7 @@ def list_items(
     if status:
         stmt = stmt.where(Item.status == status)
     if due_before:
+        due_before = to_utc(due_before, user_tz_name(db, user_id))
         stmt = stmt.where(Item.due_at != None, Item.due_at <= due_before)  # noqa: E711
     if tag:
         stmt = stmt.where(Item.tags.like(f"%{tag.lower()}%"))
@@ -135,6 +137,8 @@ def update_item(db: Session, item_id: int, patch: ItemPatch, user_id: int | None
     fields = patch.model_dump(exclude_unset=True, exclude={"allow_history_rewrite"})
     if "tags" in fields:
         fields["tags"] = _tags_to_str(fields["tags"])
+    if fields.get("due_at") is not None:
+        fields["due_at"] = to_utc(fields["due_at"], user_tz_name(db, user_id))
 
     # Decision append-only convention — see master plan §Decision affordances.
     # The new body must CONTAIN the existing body verbatim (substring match,
@@ -185,11 +189,12 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> bool:
 
 def add_reminder(
     db: Session, item_id: int, fire_at: datetime, message: str | None = None,
-    channel: str = "telegram", user_id: int | None = None,
+    channel: str = "ntfy", user_id: int | None = None,
 ) -> Reminder | None:
     item = get_item(db, item_id, user_id=user_id)
     if item is None:
         return None
+    fire_at = to_utc(fire_at, user_tz_name(db, user_id))
     r = Reminder(item_id=item_id, user_id=user_id, fire_at=fire_at, message=message, channel=channel)
     db.add(r)
     db.commit()

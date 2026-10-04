@@ -5,6 +5,12 @@ Two jobs run continuously inside mypa-api:
 1. dispatch_reminders — scans the `reminders` table every 60s for rows
    where fire_at <= now AND fired_at IS NULL, dispatches a push for
    each (respecting the user's `realtime` pref), marks fired_at.
+   Rows that can't be delivered are closed out too (fired_at +
+   last_error) so they never clog the queue.
+
+Timestamps are compared with SQLite's julianday(), which normalizes
+every stored format (naive UTC, "T" separator, "+01:00" offsets) to UTC.
+Comparing raw strings is wrong: ' ' sorts before 'T'.
 
 2. dispatch_digests — every 60s checks each user: is "now in their TZ"
    == digest_hour:XX, AND have we not already fired their digest today?
@@ -27,6 +33,7 @@ from sqlalchemy import text
 from . import notifier
 from .db import session_factory
 from .settings import settings
+from .timeutil import db_ts, safe_zone
 
 
 log = logging.getLogger(__name__)
@@ -38,10 +45,11 @@ def _now_utc() -> datetime:
 
 
 def _user_tz(tz_name: str) -> ZoneInfo:
-    try:
-        return ZoneInfo(tz_name)
-    except Exception:
-        return ZoneInfo("Etc/UTC")
+    return safe_zone(tz_name)
+
+
+# Failed publishes are retried once per tick, then given up on.
+MAX_REMINDER_ATTEMPTS = 5
 
 
 def _load_prefs(prefs_raw: str | None) -> dict:
@@ -64,34 +72,43 @@ def dispatch_reminders() -> int:
     SessionLocal = session_factory()
     with SessionLocal() as db:
         rows = db.execute(text(
-            "SELECT r.id, r.item_id, r.user_id, r.fire_at, r.message, i.title, i.kind "
+            "SELECT r.id, r.item_id, r.user_id, r.fire_at, r.message, i.title, i.kind, "
+            "r.attempts "
             "FROM reminders r LEFT JOIN items i ON r.item_id = i.id "
-            "WHERE r.fired_at IS NULL AND r.fire_at <= :now "
-            "ORDER BY r.fire_at ASC LIMIT 100"
-        ), {"now": _now_utc().isoformat()}).fetchall()
+            "WHERE r.fired_at IS NULL AND julianday(r.fire_at) <= julianday(:now) "
+            "ORDER BY julianday(r.fire_at) ASC LIMIT 100"
+        ), {"now": db_ts(_now_utc())}).fetchall()
         if not rows:
             return 0
+
+        def close_out(rid: int, reason: str | None) -> None:
+            db.execute(text(
+                "UPDATE reminders SET fired_at = :now, last_error = :e WHERE id = :i"
+            ), {"now": db_ts(_now_utc()), "e": reason, "i": rid})
 
         # Cache user settings within one tick
         user_settings: dict[int, dict] = {}
         for r in rows:
-            rid, item_id, user_id, fire_at, msg, title, kind = r
+            rid, item_id, user_id, fire_at, msg, title, kind, attempts = r
             if user_id is None:
+                close_out(rid, "skipped: no user")
                 continue
             if user_id not in user_settings:
                 urow = db.execute(text(
                     "SELECT tz, notify_topic, notify_prefs FROM users WHERE id = :i"
                 ), {"i": user_id}).fetchone()
-                if urow is None:
-                    user_settings[user_id] = {}
-                    continue
-                user_settings[user_id] = {
+                user_settings[user_id] = {} if urow is None else {
                     "tz": urow[0], "topic": urow[1], "prefs": _load_prefs(urow[2]),
                 }
             us = user_settings[user_id]
+            if not us:
+                close_out(rid, "skipped: user not found")
+                continue
             if not us.get("topic"):
+                close_out(rid, "skipped: no notify topic")
                 continue
             if not us["prefs"].get("realtime", True):
+                close_out(rid, "skipped: realtime notifications off")
                 continue
 
             body = msg or f"Reminder: {title or '(no title)'}"
@@ -103,9 +120,16 @@ def dispatch_reminders() -> int:
                 tags=["bell"],
             )
             if ok:
-                db.execute(text("UPDATE reminders SET fired_at = :now WHERE id = :i"),
-                           {"now": _now_utc().isoformat(), "i": rid})
+                close_out(rid, None)
                 fired += 1
+            elif (attempts or 0) + 1 >= MAX_REMINDER_ATTEMPTS:
+                close_out(rid, f"failed: publish failed {MAX_REMINDER_ATTEMPTS} times")
+                log.warning("dispatch_reminders: giving up on reminder %s", rid)
+            else:
+                db.execute(text(
+                    "UPDATE reminders SET attempts = attempts + 1, "
+                    "last_error = 'publish failed' WHERE id = :i"
+                ), {"i": rid})
         db.commit()
     if fired:
         log.info("dispatch_reminders: fired %d", fired)
@@ -148,21 +172,23 @@ def dispatch_digests() -> int:
 
             # Assemble the digest
             local_day_end = local_day_start.replace(hour=23, minute=59, second=59)
-            day_start_utc = local_day_start.astimezone(timezone.utc).isoformat()
-            day_end_utc = local_day_end.astimezone(timezone.utc).isoformat()
+            day_start_utc = db_ts(local_day_start)
+            day_end_utc = db_ts(local_day_end)
 
             due_today = db.execute(text(
                 "SELECT count(*) FROM items WHERE user_id = :u AND status = 'open' "
-                "AND due_at IS NOT NULL AND due_at >= :a AND due_at <= :b"
+                "AND due_at IS NOT NULL "
+                "AND julianday(due_at) BETWEEN julianday(:a) AND julianday(:b)"
             ), {"u": uid, "a": day_start_utc, "b": day_end_utc}).scalar() or 0
             overdue = db.execute(text(
                 "SELECT count(*) FROM items WHERE user_id = :u AND status = 'open' "
-                "AND due_at IS NOT NULL AND due_at < :a"
+                "AND due_at IS NOT NULL AND julianday(due_at) < julianday(:a)"
             ), {"u": uid, "a": day_start_utc}).scalar() or 0
             events_today = db.execute(text(
                 "SELECT title FROM items WHERE user_id = :u AND kind = 'event' "
-                "AND due_at IS NOT NULL AND due_at >= :a AND due_at <= :b "
-                "ORDER BY due_at ASC LIMIT 5"
+                "AND due_at IS NOT NULL "
+                "AND julianday(due_at) BETWEEN julianday(:a) AND julianday(:b) "
+                "ORDER BY julianday(due_at) ASC LIMIT 5"
             ), {"u": uid, "a": day_start_utc, "b": day_end_utc}).fetchall()
 
             parts = []

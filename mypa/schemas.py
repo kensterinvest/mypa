@@ -4,7 +4,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from .timeutil import as_utc
 
 
 class ItemCreate(BaseModel):
@@ -62,11 +64,17 @@ class ItemOut(BaseModel):
     updated_at: datetime
     completed_at: datetime | None
 
+    @field_validator("due_at", "created_at", "updated_at", "completed_at")
+    @classmethod
+    def _utc(cls, v: datetime | None) -> datetime | None:
+        # DB datetimes come back naive; they are UTC by convention.
+        return as_utc(v)
+
 
 class ReminderCreate(BaseModel):
     fire_at: datetime
     message: str | None = None
-    channel: str = "telegram"
+    channel: str = "ntfy"
 
 
 class ReminderOut(BaseModel):
@@ -78,3 +86,8 @@ class ReminderOut(BaseModel):
     fired_at: datetime | None
     channel: str
     message: str | None
+
+    @field_validator("fire_at", "fired_at")
+    @classmethod
+    def _utc(cls, v: datetime | None) -> datetime | None:
+        return as_utc(v)
