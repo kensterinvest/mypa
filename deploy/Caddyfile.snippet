@@ -18,7 +18,15 @@ MYPA_HOST {
 		reverse_proxy 127.0.0.1:8022
 	}
 
-	# MCP transport — proxied to mypa-mcp (Streamable HTTP, what Claude.ai uses)
+	# MCP transport — proxied to mypa-mcp (Streamable HTTP, what Claude.ai uses).
+	# Canonical URL: https://<host>/mcp — passed through as-is (backend /mcp).
+	handle /mcp {
+		reverse_proxy 127.0.0.1:8023 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	# Legacy URL https://<host>/mcp/sse (and /mcp/health) — prefix stripped,
+	# backend sees /sse, which is an alias of /mcp. Still Streamable HTTP.
 	handle_path /mcp/* {
 		reverse_proxy 127.0.0.1:8023 {
 			header_up X-Forwarded-For {remote_host}

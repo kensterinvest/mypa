@@ -5,6 +5,15 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed — MCP endpoint
+- **Canonical MCP URL is now `https://<host>/mcp`** (Streamable HTTP).
+  The old `https://<host>/mcp/sse` URL always spoke Streamable HTTP
+  despite its name; it remains as an alias so existing connectors keep
+  working, but new connectors should use `/mcp`. Classic SSE transport
+  (deprecated in the MCP spec) is not served. Caddy configs
+  (`deploy/Caddyfile.snippet`, `docker/caddy/Caddyfile`) gained a
+  pass-through `handle /mcp` block — update your Caddyfile on upgrade.
+
 ### Added — install paths
 - **Docker support** — full compose stack at `docker/` directory.
   Single `docker compose up -d` brings up API + MCP + ntfy + Caddy

@@ -381,7 +381,7 @@ color 32 "  MyPA setup complete. SAVE THESE NOW IN YOUR PASSWORD MANAGER."
 color 32 "================================================================"
 echo "  Public URL:        https://${E[PUBLIC_HOST]}/"
 echo "  REST API:          https://${E[PUBLIC_HOST]}/api/"
-echo "  MCP endpoint:      https://${E[PUBLIC_HOST]}/mcp/sse"
+echo "  MCP endpoint:      https://${E[PUBLIC_HOST]}/mcp"
 echo "  OAuth discovery:   https://${E[PUBLIC_HOST]}/.well-known/oauth-authorization-server"
 echo
 echo "  BEARER_TOKEN_RW (full access — also used as OAuth login password):"

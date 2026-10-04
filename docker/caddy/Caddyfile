@@ -31,7 +31,12 @@
         reverse_proxy mypa-api:8022
     }
 
-    # MCP transport
+    # MCP transport (Streamable HTTP). Canonical URL https://<host>/mcp is
+    # passed through as-is; legacy /mcp/sse is prefix-stripped to /sse,
+    # which the backend serves as an alias of /mcp.
+    handle /mcp {
+        reverse_proxy mypa-mcp:8023
+    }
     handle_path /mcp/* {
         reverse_proxy mypa-mcp:8023
     }

@@ -127,7 +127,7 @@ MyPA itself works fine without ntfy — see
 
 After the stack is running, follow
 [`docs/OAUTH_SETUP.md`](../docs/OAUTH_SETUP.md) — claude.ai → Settings
-→ Connectors → + Add custom → URL `https://<your-PUBLIC_HOST>/mcp/sse`
+→ Connectors → + Add custom → URL `https://<your-PUBLIC_HOST>/mcp`
 → sign in with the admin email + password from `.env`.
 
 ## Troubleshooting

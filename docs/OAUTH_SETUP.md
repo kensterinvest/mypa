@@ -22,7 +22,7 @@ You should already have:
 3. **+ Add custom connector** (or "Add MCP server")
 4. Fill in:
    - **Name:** `MyPA` (or anything)
-   - **URL:** `https://mypa.example.com/mcp/sse` ← your actual domain
+   - **URL:** `https://mypa.example.com/mcp` ← your actual domain
    - **OAuth Client ID:** leave blank
    - **OAuth Client Secret:** leave blank
 5. Click **Connect** / **Save**.
@@ -125,19 +125,19 @@ Disconnect + re-add the connector forces a fresh tool fetch.
 ### "Couldn't reach the MCP server"
 
 Either:
-- Your URL is wrong (check the `https://` and the `/mcp/sse` path)
+- Your URL is wrong (check the `https://` and the `/mcp` path; legacy `/mcp/sse` also works)
 - DNS hasn't propagated (test with `curl https://your-domain/.well-known/oauth-authorization-server`)
 - Your firewall blocks port 443 (open it at the OS firewall AND any
   cloud-provider firewall — both layers must allow)
 - The MCP server crashed (`systemctl status mypa-mcp`)
 
-### "POST /sse returned 405"
+### "POST /mcp returned 405"
 
-You're running the older SSE transport. Switch to Streamable HTTP — see
-`mypa/mcp_server.py`:
+You're running the older (deprecated) SSE transport. MyPA uses Streamable
+HTTP only — see `mypa/mcp_server.py`:
 
 ```python
-mcp = FastMCP(name="mypa", streamable_http_path="/sse", ...)
+mcp = FastMCP(name="mypa", streamable_http_path="/mcp", ...)
 # ...
 app.mount("/", mcp.streamable_http_app())  # NOT mcp.sse_app()
 ```

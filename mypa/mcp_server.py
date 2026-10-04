@@ -1,4 +1,4 @@
-"""MyPA MCP server (HTTP/SSE transport).
+"""MyPA MCP server (Streamable HTTP transport).
 
 Wires the same service layer the REST API uses, so Claude / agents and
 the dashboard see identical data with identical semantics.
@@ -30,13 +30,21 @@ from .settings import settings
 # Build the MCP server with hardened transport security
 # -----------------------------------------------------------------------------
 s = settings()
+
+# Canonical MCP endpoint path (backend-side).
+MCP_PATH = "/mcp"
+# Older connectors were configured with https://<host>/mcp/sse; Caddy strips
+# the /mcp/ prefix so the backend sees /sse. That URL always spoke Streamable
+# HTTP despite its name — keep it working so existing connectors don't break.
+LEGACY_MCP_PATHS = ("/sse",)
+
 mcp = FastMCP(
     name="mypa",
-    # Override default streamable HTTP path ("/mcp") to "/sse" so the
-    # public URL https://mypa.z-tidus.com/mcp/sse continues to work
-    # (Caddy strips the /mcp/ prefix; backend sees /sse). Claude.ai's
-    # Custom MCP uses Streamable HTTP transport, NOT classic SSE.
-    streamable_http_path="/sse",
+    # Canonical Streamable HTTP endpoint. Public URL: https://<host>/mcp
+    # (Caddy passes /mcp through unchanged). The legacy SSE-named URL
+    # https://<host>/mcp/sse is kept as an alias below — see
+    # LEGACY_MCP_PATHS. Classic SSE transport is never served.
+    streamable_http_path=MCP_PATH,
     transport_security=TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=[s.public_host, "127.0.0.1", "localhost"],
@@ -567,6 +575,23 @@ def pa_set_notify_prefs(
 
 # Build the Streamable HTTP MCP app once at import; reuse its lifespan.
 _mcp_app = mcp.streamable_http_app()
+
+
+def _add_legacy_aliases(starlette_app, canonical: str, aliases) -> None:
+    """Serve the same Streamable HTTP endpoint at each legacy path."""
+    from starlette.routing import Route
+
+    canonical_route = next(
+        r for r in starlette_app.router.routes
+        if isinstance(r, Route) and r.path == canonical
+    )
+    for alias in aliases:
+        starlette_app.router.routes.append(
+            Route(alias, endpoint=canonical_route.endpoint)
+        )
+
+
+_add_legacy_aliases(_mcp_app, MCP_PATH, LEGACY_MCP_PATHS)
 
 
 from contextlib import asynccontextmanager  # noqa: E402

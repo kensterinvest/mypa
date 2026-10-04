@@ -56,7 +56,7 @@ this on your phone):
 2. **+ Add custom connector**
 3. Fill in:
    - **Name:** `MyPA` (or whatever)
-   - **URL:** `https://mypa.example.com/mcp/sse` (use your actual URL)
+   - **URL:** `https://mypa.example.com/mcp` (use your actual URL)
    - Leave OAuth Client ID / Secret blank
 4. Click **Connect**
 
@@ -143,7 +143,7 @@ for the full breakdown.
 
 | Symptom | Try |
 |---|---|
-| "Couldn't reach the MCP server" when adding the connector | Check the URL has `https://` and ends in `/mcp/sse` |
+| "Couldn't reach the MCP server" when adding the connector | Check the URL has `https://` and ends in `/mcp` (older `/mcp/sse` URLs still work) |
 | Login fails with "invalid credentials" | Check email is exact (case-insensitive but no typos); ask the operator to reset your password |
 | Claude connector worked yesterday, now says "Authorization required" | Operator may have rotated `OAUTH_JWT_SECRET` — re-authorize the connector in claude.ai Settings |
 | Dashboard logs you out unexpectedly | Token expired (1h). The dashboard will auto-refresh; if it doesn't, sign in again |

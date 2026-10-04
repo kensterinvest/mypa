@@ -113,7 +113,7 @@ sudo bash setup.sh
 #
 # 4. Connect Claude.ai (desktop browser):
 #    Settings → Connectors → + Add custom →
-#    URL: https://mypa.example.com/mcp/sse → Sign in with email+password.
+#    URL: https://mypa.example.com/mcp → Sign in with email+password.
 #    Your phone inherits the connector automatically.
 ```
 
