@@ -5,6 +5,17 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — connectors
+- `pa_add` accepts `source` + `source_ref` (e.g. `"gmail"`, thread id).
+  Saving the same pair again returns the existing item with
+  `"duplicate": true`, so daily syncs can re-read overlapping mail safely.
+- `pa_import_whatsapp`: archive a WhatsApp **Export chat** `.txt` as one
+  searchable `chat` item per day (Android and iOS formats, dd/mm vs
+  mm/dd auto-detected). Re-imports only add new messages. New `chat` kind.
+- `docs/CONNECTORS.md` (how Gmail / Calendar / Drive / WhatsApp reach
+  MyPA via Claude) and `docs/PRODUCT_ROADMAP.md` (install-for-anyone plan,
+  owner-only encryption model).
+
 ### Fixed — reminder timing and queue health
 - **Timezones were dropped on save.** SQLite stores wall time only, so
   `15:30+01:00` was saved as `15:30` and fired an hour late. All

@@ -8,6 +8,7 @@ Run via systemd:
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -55,6 +56,9 @@ mcp = FastMCP(
         ],
     ),
 )
+
+
+_SOURCE_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
 
 def _serialize(item) -> dict:
@@ -123,6 +127,8 @@ def pa_add(
     tags: list[str] | None = None,
     due_at: str | None = None,
     context: str | None = None,
+    source: str | None = None,
+    source_ref: str | None = None,
 ) -> dict:
     """Save a new item to the user's MyPA.
 
@@ -151,6 +157,12 @@ def pa_add(
     the saved item has conversational context preserved under a
     `## Context` heading.
 
+    `source` + `source_ref` record where an imported item came from, for
+    syncs: source="gmail", source_ref="<thread id>". Saving the same pair
+    again returns the existing item with "duplicate": true instead of
+    creating a copy, so a sync can safely re-read overlapping mail.
+    Omit both for things the user tells you directly.
+
     Returns the parsed item so the caller can show read-back to the
     user. Save with confidence then surface the result ("Saved as
     `preference` — Pizza"). User can undo via pa_undo_last() within
@@ -158,7 +170,18 @@ def pa_add(
     """
     if (denied := _deny_if_read_only("pa_add")):
         return denied
+    if bool(source) != bool(source_ref):
+        return {"error": "pass source and source_ref together (e.g. 'gmail', '<thread id>')"}
+    if source and not _SOURCE_RE.match(source):
+        return {"error": "source must be a short lowercase name like 'gmail' or 'whatsapp'"}
     Session = session_factory()
+    if source_ref:
+        with Session() as db:
+            existing = service.find_by_source_ref(db, source, source_ref,
+                                                  user_id=current_user_id())
+            if existing is not None:
+                audit("pa_add", {"source": source, "source_ref": source_ref}, "duplicate", 0)
+                return {**_serialize(existing), "duplicate": True}
     try:
         payload = ItemCreate(
             kind=kind,
@@ -168,7 +191,8 @@ def pa_add(
             tags=tags or [],
             due_at=parse_iso(due_at, "due_at") if due_at else None,
             context=context,
-            source="claude",
+            source=source or "claude",
+            source_ref=source_ref or None,
         )
         with Session() as db:
             item = service.create_item(db, payload, user_id=current_user_id())
@@ -519,6 +543,75 @@ def pa_cancel_reminder(reminder_id: int) -> dict:
         return {"error": "no pending reminder with that id", "reminder_id": reminder_id}
     audit("pa_cancel_reminder", {"reminder_id": reminder_id}, "cancelled")
     return {"cancelled_reminder_id": reminder_id, "item_id": r.item_id}
+
+
+MAX_IMPORT_CHARS = 5_000_000
+
+
+@mcp.tool()
+def pa_import_whatsapp(chat_name: str, export_text: str, day_first: bool | None = None) -> dict:
+    """Archive a WhatsApp chat export into MyPA: one searchable `chat`
+    item per day ("WhatsApp: Mum — 2026-10-03").
+
+    WhatsApp has no API for personal accounts. The user exports a chat on
+    their phone (open chat → ⋮ / contact name → Export chat → Without
+    media) and shares the .txt with you; pass its full text here.
+    Re-importing the same chat later only adds new days / messages.
+
+    After importing, read the chat and save the durable facts separately
+    with pa_add (plans → event, promises → todo, addresses → place,
+    people → person) so they surface in normal searches.
+
+    `day_first`: leave unset to auto-detect dd/mm vs mm/dd.
+    """
+    if (denied := _deny_if_read_only("pa_import_whatsapp")):
+        return denied
+    from .importers import whatsapp as wa
+    from .schemas import ItemPatch
+
+    chat = " ".join((chat_name or "").split())[:100]
+    if not chat:
+        return {"error": "chat_name is required (e.g. the contact or group name)"}
+    if len(export_text or "") > MAX_IMPORT_CHARS:
+        return {"error": f"export too large (max {MAX_IMPORT_CHARS:,} characters); "
+                         "split it or export a shorter range"}
+    days = wa.group_by_day(wa.parse(export_text or "", day_first=day_first))
+    if not days:
+        return {"error": "no messages found — is this a WhatsApp 'Export chat' .txt file?"}
+
+    uid = current_user_id()
+    created = updated = unchanged = 0
+    Session = session_factory()
+    with Session() as db:
+        for day, msgs in days.items():
+            ref = f"{chat.lower()}:{day.isoformat()}"
+            body = wa.render_day(msgs)
+            data = {"chat": chat, "date": day.isoformat(),
+                    "participants": sorted({m.sender for m in msgs})}
+            existing = service.find_by_source_ref(db, "whatsapp", ref, user_id=uid)
+            if existing is None:
+                service.create_item(db, ItemCreate(
+                    kind="chat", title=f"WhatsApp: {chat} — {day.isoformat()}",
+                    body=body, data=data, tags=["whatsapp"],
+                    source="whatsapp", source_ref=ref,
+                ), user_id=uid)
+                created += 1
+            elif len(body) > len(existing.body or ""):
+                service.update_item(db, existing.id, ItemPatch(body=body, data=data), user_id=uid)
+                updated += 1
+            else:
+                unchanged += 1
+    first, last = next(iter(days)), next(reversed(days))
+    audit("pa_import_whatsapp", {"chat": chat, "days": len(days)},
+          f"created={created} updated={updated}")
+    return {
+        "chat": chat,
+        "messages": sum(len(m) for m in days.values()),
+        "days": len(days),
+        "range": [first.isoformat(), last.isoformat()],
+        "created": created, "updated": updated, "unchanged": unchanged,
+        "next_step": "Save the important facts from this chat with pa_add.",
+    }
 
 
 # -----------------------------------------------------------------------------

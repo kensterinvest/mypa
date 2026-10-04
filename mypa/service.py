@@ -69,6 +69,17 @@ def create_item(db: Session, payload: ItemCreate, user_id: int | None = None) ->
     return item
 
 
+def find_by_source_ref(
+    db: Session, source: str, source_ref: str, user_id: int | None = None,
+) -> Item | None:
+    """The item previously imported from (source, source_ref), e.g. a
+    Gmail thread — lets syncs re-run without creating duplicates."""
+    stmt = select(Item).where(Item.source == source, Item.source_ref == source_ref)
+    if user_id is not None:
+        stmt = stmt.where(Item.user_id == user_id)
+    return db.execute(stmt.limit(1)).scalar_one_or_none()
+
+
 def get_item(db: Session, item_id: int, user_id: int | None = None) -> Item | None:
     item = db.get(Item, item_id)
     if item is None:
@@ -437,6 +448,11 @@ DEFAULT_KINDS: dict[str, dict[str, Any]] = {
     "trip": {
         "description": "Travel plan.",
         "example_data": {"destination": "string", "depart_at": "iso", "return_at": "iso"},
+    },
+    "chat": {
+        "description": "Archived conversation (one item per chat per day), e.g. "
+                       "imported from a WhatsApp export via pa_import_whatsapp.",
+        "example_data": {"chat": "string", "date": "iso date", "participants": ["string"]},
     },
     "note": {
         "description": "Freeform text. Body is the content.",

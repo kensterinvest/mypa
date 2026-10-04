@@ -113,3 +113,39 @@ def test_weekly_overdue_push(uid):
         assert sched_mod.dispatch_overdue_weekly() == 0  # once per day
     assert pub.call_args.kwargs["message"] == "renew passport"
     assert "1 overdue" in pub.call_args.kwargs["title"]
+
+
+def test_source_ref_makes_sync_idempotent(uid):
+    first = mcp_mod.pa_add(kind="purchase", title="Amazon order", source="gmail",
+                           source_ref="thread-123")
+    again = mcp_mod.pa_add(kind="purchase", title="Amazon order (re-read)", source="gmail",
+                           source_ref="thread-123")
+    assert again["duplicate"] is True and again["id"] == first["id"]
+    assert first["source"] == "gmail" and first["source_ref"] == "thread-123"
+    assert "together" in mcp_mod.pa_add(kind="note", title="x", source="gmail")["error"]
+    assert "lowercase" in mcp_mod.pa_add(kind="note", title="x", source="Gmail!",
+                                         source_ref="1")["error"]
+
+
+ANDROID_EXPORT = """03/10/2026, 14:05 - Messages and calls are end-to-end encrypted.
+03/10/2026, 14:05 - Alice: Dinner at Dishoom Friday 7pm?
+03/10/2026, 14:06 - Me: Yes! Booking now
+04/10/2026, 09:00 - Alice: <Media omitted>
+04/10/2026, 09:01 - Alice: Address is 7 Boundary St"""
+
+
+def test_whatsapp_import_is_searchable_and_incremental(uid):
+    r = mcp_mod.pa_import_whatsapp("Alice", ANDROID_EXPORT)
+    assert (r["messages"], r["days"], r["created"]) == (3, 2, 2)
+    hits = mcp_mod.pa_search("dishoom")["items"]
+    assert [h["title"] for h in hits] == ["WhatsApp: Alice — 2026-10-03"]
+    assert hits[0]["source"] == "whatsapp"
+    # Re-export later with one more message that day: updates, no duplicates
+    more = ANDROID_EXPORT + "\n04/10/2026, 10:00 - Me: Thanks!"
+    r2 = mcp_mod.pa_import_whatsapp("Alice", more)
+    assert (r2["created"], r2["updated"], r2["unchanged"]) == (0, 1, 1)
+    assert mcp_mod.pa_list(kind="chat")["count"] == 2
+
+
+def test_whatsapp_import_rejects_non_export(uid):
+    assert "no messages" in mcp_mod.pa_import_whatsapp("x", "hello world")["error"]

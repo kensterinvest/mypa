@@ -64,11 +64,13 @@ durable, structured facts of your life.
 - **SQLCipher** AES-256 encryption at rest; backups equally opaque
 - **OAuth 2.1 + PKCE** for Claude.ai connector login, with RFC 6749 §10.4
   refresh-token rotation and reuse detection
-- **15 MCP tools**: `pa_add`, `pa_get`, `pa_list`, `pa_search`,
+- **16 MCP tools**: `pa_add`, `pa_get`, `pa_list`, `pa_search`,
   `pa_describe_schema`, `pa_undo_last`, `pa_delete`, `pa_update`,
   `pa_complete`, `pa_add_reminder`, `pa_list_reminders`,
-  `pa_cancel_reminder`, plus `pa_attach_image`,
+  `pa_cancel_reminder`, `pa_import_whatsapp`, plus `pa_attach_image`,
   `pa_get_notify_prefs`, `pa_set_notify_prefs`
+- **Connectors** via Claude: daily Gmail sync routine, WhatsApp chat
+  export import (`pa_import_whatsapp`) — see [docs/CONNECTORS.md](docs/CONNECTORS.md)
 - **Push notifications** via self-hosted [ntfy](https://ntfy.sh), with
   authenticated publish + per-user read tokens (no spoofing)
 - **REST API + Angular dashboard** for browsing
