@@ -139,6 +139,28 @@ a record.
 
 ---
 
+## 5a. Existing apps (market check, Oct 2026)
+
+Each building block already ships as a product. Nobody combines all of them.
+
+| Category | Apps | Notes |
+|---|---|---|
+| Object / room 3D scanning | Polycam, Scaniverse (Niantic Spatial), KIRI Engine, RealityScan (Epic), 3D Scanner App | Polycam Pro ≈ $27/mo; Scaniverse on-device scanning free; KIRI free room/scene scans |
+| Face / head scanning (TrueDepth) | Heges, EM3D, Orch / OpticALLY 3D Scan; Bellus3D (discontinued 2022) | Developers claim ~0.5 mm; EM3D independently validated at 0.39 mm vs CBCT |
+| Quick measurement | Apple Measure (built in), Google Measure | AR point-to-point; auto-detects some objects |
+| Box / parcel dimensioning | Parcel Measure, vMeasure, EazyMeasure; PackageX VisionSDK (SDK) | LiDAR iPhones only; ~1 cm claimed |
+| Rooms / floor plans | Polycam, Canvas, magicplan, Room Planner (RoomPlan-based) | |
+| Built into products | Apple Personalized Spatial Audio (TrueDepth ear scan), eyewear try-on/frame sizing apps | Proves TrueDepth is good enough for consumer fitting |
+
+**Gap:** these are single-purpose tools. Scans stay inside each app's own
+cloud, measurements aren't structured data, and nothing remembers "my
+alcove is 75 cm" so an AI can use it later. The opportunity is the
+*combination*: scan → recognise → measure → structured record in a
+user-owned archive (MyPA) that any AI can query, plus education workflows.
+The POC can also reuse these apps as accuracy baselines.
+
+---
+
 ## 6. Recommended architecture
 
 **Native iOS (Swift + SwiftUI + ARKit/RealityKit), iOS 17+.**
